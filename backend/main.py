@@ -83,10 +83,28 @@ def init_schema(conn: sqlite3.Connection) -> None:
             city TEXT,
             year INTEGER,
             date TEXT,
+            sheet_row INTEGER,
             artists_json TEXT NOT NULL DEFAULT '[]',
             FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
         );
         """
+    )
+    # A DB created before sheet_row existed still holds hand-entered rows worth keeping,
+    # so widen it in place rather than making anyone delete rave.db.
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(sets)")}
+    if "sheet_row" not in cols:
+        conn.execute("ALTER TABLE sets ADD COLUMN sheet_row INTEGER")
+        backfill_sheet_rows(conn)
+
+
+def backfill_sheet_rows(conn: sqlite3.Connection) -> None:
+    """Set ids already encode the sheet row, so this joins exactly rather than guessing."""
+    sets_path = DATA / "sets.json"
+    if not sets_path.exists():
+        return
+    conn.executemany(
+        "UPDATE sets SET sheet_row = ? WHERE id = ? AND sheet_row IS NULL",
+        [(s.get("sheet_row"), s["id"]) for s in json.loads(sets_path.read_text())],
     )
 
 
@@ -101,6 +119,10 @@ def money(value: Any) -> float:
 # because the sheet has no status column.
 NOT_ATTENDED_MARKERS = ("(cancelled)", "(skipped)")
 
+# The sheet lists a night's sets in the order you saw them, so sheet_row is the only
+# time signal there is. Hand-logged sets have none and sort to the end of their day.
+SET_ORDER = "COALESCE(sheet_row, 1000000)"
+
 
 def status_for(show: str, start: str | None, end: str | None) -> str:
     lowered = (show or "").lower()
@@ -108,6 +130,16 @@ def status_for(show: str, start: str | None, end: str | None) -> str:
         return "skipped"
     last = end or start
     return "attended" if last and date.fromisoformat(last) <= date.today() else "planned"
+
+
+def day_span(start: str | None, end: str | None) -> int:
+    """Nights the event covers. 2+ is what makes it a festival; the sheet already dates the range."""
+    if not start:
+        return 1
+    try:
+        return max(1, (date.fromisoformat(end or start) - date.fromisoformat(start)).days + 1)
+    except ValueError:
+        return 1
 
 
 def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
@@ -130,6 +162,7 @@ def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
         "sets_sheet": row["sets_sheet"],
         "dollars_per_set": round(total / sets_count, 2) if sets_count else None,
         "status": status_for(row["show"], row["start_date"], row["end_date"]),
+        "days": day_span(row["start_date"], row["end_date"]),
         "source": row["source"],
         "source_tab": row["source_tab"],
     }
@@ -193,8 +226,8 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
     for s in sets:
         conn.execute(
             """INSERT INTO sets
-               (id, event_id, title, show, venue, city, year, date, artists_json)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               (id, event_id, title, show, venue, city, year, date, sheet_row, artists_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 s["id"],
                 s["event_id"],
@@ -204,6 +237,7 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                 s.get("city"),
                 s.get("year"),
                 s.get("date"),
+                s.get("sheet_row"),
                 json.dumps(s.get("artists") or []),
             ),
         )
@@ -285,7 +319,7 @@ def get_event(event_id: str) -> dict:
         sets = [
             shape_set(r)
             for r in conn.execute(
-                "SELECT * FROM sets WHERE event_id = ? ORDER BY date, title", (event_id,)
+                f"SELECT * FROM sets WHERE event_id = ? ORDER BY date, {SET_ORDER}", (event_id,)
             )
         ]
         event["sets"] = sets
@@ -393,11 +427,52 @@ def list_sets(event_id: str | None = None) -> list[dict]:
     with db() as conn:
         if event_id:
             rows = conn.execute(
-                "SELECT * FROM sets WHERE event_id = ? ORDER BY date DESC, title", (event_id,)
+                f"SELECT * FROM sets WHERE event_id = ? ORDER BY date DESC, {SET_ORDER}", (event_id,)
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM sets ORDER BY date DESC, title").fetchall()
+            rows = conn.execute(f"SELECT * FROM sets ORDER BY date DESC, {SET_ORDER}").fetchall()
         return [shape_set(r) for r in rows]
+
+
+def rank(pairs: list[tuple[str, object]]) -> list[dict]:
+    """pairs are (display name, thing counted). Groups case-insensitively, keeps first casing."""
+    seen: dict[str, set] = {}
+    display: dict[str, str] = {}
+    for name, item in pairs:
+        key = " ".join((name or "").split()).lower()
+        if not key:
+            continue
+        seen.setdefault(key, set()).add(item)
+        display.setdefault(key, name.strip())
+    counts = [{"name": display[k], "count": len(v)} for k, v in seen.items()]
+    return sorted(counts, key=lambda c: (-c["count"], c["name"].lower()))
+
+
+@app.get("/stats")
+def stats() -> dict:
+    """Artist / venue / city rankings, matching the sheet's ArtistsVenues tab.
+
+    The sheet counts a venue or city by distinct dates in the Sets tab, not by event
+    (COUNTUNIQUEIFS over Sets[Date]), so a two-day festival at one venue is two visits
+    and a venue with no logged sets does not appear at all.
+    """
+    with db() as conn:
+        rows = conn.execute("SELECT venue, city, date, artists_json FROM sets").fetchall()
+
+    artists: list[tuple[str, object]] = []
+    venues: list[tuple[str, object]] = []
+    cities: list[tuple[str, object]] = []
+    for i, r in enumerate(rows):
+        # A set is counted once per artist, so the unit is the row itself, not the date.
+        for a in json.loads(r["artists_json"] or "[]"):
+            if a and a.strip():
+                artists.append((a, i))
+        if r["venue"]:
+            venues.append((r["venue"], r["date"]))
+        if r["city"]:
+            cities.append((r["city"], r["date"]))
+
+    return {"artists": rank(artists), "venues": rank(venues), "cities": rank(cities)}
 
 
 @app.get("/recap")

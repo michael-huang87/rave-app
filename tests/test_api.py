@@ -133,3 +133,84 @@ def test_reload_snapshot_refuses_to_drop_hand_entered_rows(client):
     assert client.get(f"/events/{created.json()['id']}").status_code == 200
     assert client.post("/admin/reload-snapshot?force=true").status_code == 200
     assert client.get(f"/events/{created.json()['id']}").status_code == 404
+
+
+@needs_snapshot
+def test_sets_come_back_in_sheet_order(client):
+    """The sheet's row order is the order the sets were seen; alphabetical destroyed it."""
+    sets = client.get("/sets").json()
+    by_id = {s["id"]: s.get("sheet_row") for s in snapshot(SETS_SNAPSHOT)}
+
+    dates = [s["date"] for s in sets]
+    assert dates == sorted(dates, reverse=True), "days should stay newest-first"
+
+    for day in ("2026-05-17", "2025-10-25"):
+        rows = [by_id[s["id"]] for s in sets if s["date"] == day]
+        assert len(rows) > 1, f"{day} needs several sets to be worth checking"
+        assert rows == sorted(rows), f"{day} lost sheet order"
+        titles = [s["title"] for s in sets if s["date"] == day]
+        assert titles != sorted(titles), f"{day} is still alphabetical"
+
+
+@needs_snapshot
+def test_hand_logged_set_sorts_after_the_sheet_rows_of_its_day(client):
+    """A set logged in the app has no sheet_row; it belongs at the end of its night, not the start."""
+    event = client.get("/events").json()[-1]
+    day = client.get(f"/sets?event_id={event['id']}").json()
+    assert day, "picked an event with no sets"
+
+    client.post(
+        f"/events/{event['id']}/sets",
+        json={"title": "AAA Encore", "artists": ["AAA Encore"], "date": day[0]["date"]},
+    )
+    same_day = [s["title"] for s in client.get(f"/sets?event_id={event['id']}").json() if s["date"] == day[0]["date"]]
+    assert same_day[-1] == "AAA Encore", same_day
+
+
+@needs_snapshot
+def test_stats_match_the_sheets_own_analytics(client):
+    """Venue/city counts are distinct set-dates, the way ArtistsVenues computes them."""
+    stats = client.get("/stats").json()
+    venues = {v["name"]: v["count"] for v in stats["venues"]}
+    cities = {c["name"]: c["count"] for c in stats["cities"]}
+
+    # Straight from the sheet's ArtistsVenues tab.
+    assert venues["Bill Graham"] == 37
+    assert venues["Midway"] == 23
+    assert venues["Oakland Arena"] == 9
+    assert cities["San Francisco, CA"] == 74
+    assert cities["Las Vegas, NV"] == 26
+    assert stats["artists"][0] == {"name": "Subtronics", "count": 26}
+
+    for key in ("artists", "venues", "cities"):
+        counts = [x["count"] for x in stats[key]]
+        assert counts == sorted(counts, reverse=True), f"{key} not ranked"
+
+    sets = snapshot(SETS_SNAPSHOT)
+    assert len(cities) == len({s["city"].strip().lower() for s in sets if s.get("city")})
+
+
+@needs_snapshot
+def test_multi_day_events_are_festivals(client):
+    """A festival is just an event the sheet gave a 2+ day range; nothing is inferred."""
+    events = client.get("/events").json()
+    by_show = {}
+    for e in events:
+        by_show.setdefault(e["show"], []).append(e)
+
+    assert max(e["days"] for e in by_show["EDSea"]) == 7
+    assert max(e["days"] for e in by_show["Lost Lands"]) == 5
+    assert all(e["days"] == 1 for e in by_show["NGHTMRE"])
+
+    snapshot_events = snapshot(SNAPSHOT)
+    expected = sum(
+        1 for e in snapshot_events
+        if e.get("end_date") and e.get("start_date") and e["end_date"] != e["start_date"]
+    )
+    assert sum(1 for e in events if e["days"] > 1) == expected == 44
+    assert all(e["days"] >= 1 for e in events), "days is never zero or negative"
+
+
+def test_days_defaults_to_one_for_a_hand_added_event(client):
+    created = client.post("/events", json={"show": "One Nighter", "start_date": "2026-09-05"}).json()
+    assert created["days"] == 1

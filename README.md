@@ -12,7 +12,7 @@ v1 is a **working skeleton** with a real data model imported from the existing G
 | `data/README.md` | How to download the sheet and build a local snapshot |
 | `scripts/clean_sheet.py` | Writes `data/*.json` on your machine |
 | `backend/` | FastAPI + SQLite, seeds from the local snapshot if present |
-| `ios/Rave.xcodeproj` | SwiftUI app: show list, detail, add/edit, log set, log spend, recap |
+| `ios/Rave.xcodeproj` | SwiftUI app: show list, detail, add/edit, log set, log spend, sets, stats, recap |
 
 ## Local snapshot (Mac)
 
@@ -42,7 +42,7 @@ curl -s http://127.0.0.1:8000/sets | head
 curl -s http://127.0.0.1:8000/recap
 ```
 
-Useful routes: `GET /events`, `GET /events/{id}` (includes sets + spend), `POST /events`, `PATCH /events/{id}`, `PATCH /events/{id}/spend`, `POST /events/{id}/sets`, `GET /recap`.
+Useful routes: `GET /events`, `GET /events/{id}` (includes sets + spend), `POST /events`, `PATCH /events/{id}`, `PATCH /events/{id}/spend`, `POST /events/{id}/sets`, `GET /recap`, `GET /stats`.
 
 ```bash
 python3 -m pytest tests/test_api.py -q
@@ -63,7 +63,8 @@ python3 scripts/reconcile.py             # every remaining discrepancy, by categ
 `POST /admin/reload-snapshot` returns 409 rather than dropping rows the
 snapshot cannot regenerate; pass `?force=true` to override. It cannot add new
 columns to an existing DB, so a schema change needs `rm backend/rave.db` and a
-restart instead.
+restart instead — except where `init_schema` carries an explicit migration, as it
+does for `sets.sheet_row`.
 
 `reconcile.py` is read-only and always exits 0. Re-run it after editing the
 sheet to watch the lists shrink. Empty sections still print their `(0)` so a

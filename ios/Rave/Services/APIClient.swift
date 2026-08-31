@@ -83,6 +83,10 @@ actor APIClient {
         try await get("/recap")
     }
 
+    func stats() async throws -> Stats {
+        try await get("/stats")
+    }
+
     func createEvent(_ draft: EventDraft) async throws -> Event {
         try await send("/events", method: "POST", body: draft)
     }

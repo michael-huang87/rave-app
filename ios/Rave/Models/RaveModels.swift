@@ -5,6 +5,10 @@ enum RaveTheme {
     static let accent2 = Color(red: 0.35, green: 0.85, blue: 0.95)
     static let bg = Color.black
     static let card = Color(red: 0.10, green: 0.10, blue: 0.12)
+
+    // Both list tabs pack one line per row; the stock insets are built for two.
+    static let rowInsets = EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16)
+    static let headerInsets = EdgeInsets(top: 6, leading: 16, bottom: 4, trailing: 16)
 }
 
 enum EventStatus: String, Codable, CaseIterable, Identifiable {
@@ -45,9 +49,13 @@ struct Event: Identifiable, Codable, Hashable {
     var setsSheet: Int?
     var dollarsPerSet: Double?
     var status: EventStatus
+    var days: Int?
     var source: String?
     var sourceTab: String?
     var sets: [SetEntry]?
+
+    /// The sheet dates a festival as a range; a single night is a show.
+    var isFestival: Bool { (days ?? 1) > 1 }
 }
 
 struct SetEntry: Identifiable, Codable, Hashable {
@@ -79,6 +87,19 @@ struct Recap: Codable {
     var byYear: [String: RecapBucket]
 }
 
+struct StatCount: Codable, Hashable, Identifiable {
+    var name: String
+    var count: Int
+    var id: String { name }
+}
+
+/// Mirrors the sheet's ArtistsVenues tab: artists by sets seen, venues and cities by distinct days.
+struct Stats: Codable {
+    var artists: [StatCount]
+    var venues: [StatCount]
+    var cities: [StatCount]
+}
+
 struct EventDraft: Codable {
     var show: String
     var venue: String?
@@ -105,5 +126,20 @@ struct SetDraft: Codable {
 extension Double {
     var usd: String {
         String(format: "$%.2f", self)
+    }
+}
+
+extension Array {
+    /// Groups into sections without reordering: keys come out in the order they were first seen,
+    /// so the caller's sort survives. Both list tabs rely on the server's ordering.
+    func grouped<Key: Hashable>(by key: (Element) -> Key) -> [(key: Key, values: [Element])] {
+        var order: [Key] = []
+        var buckets: [Key: [Element]] = [:]
+        for element in self {
+            let k = key(element)
+            if buckets[k] == nil { order.append(k) }
+            buckets[k, default: []].append(element)
+        }
+        return order.map { (key: $0, values: buckets[$0] ?? []) }
     }
 }

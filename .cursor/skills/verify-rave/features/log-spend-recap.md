@@ -40,4 +40,5 @@ Preconditions:
 - PATCH spend replaces provided buckets; omitted buckets keep existing values.
 - Recap `all_time.sets` counts set rows, not unique titles.
 - Snapshot seed expects `all_time.sets == 1241` when `data/events.json` exists — only assert on seeded DB.
-- Recap `as_of` is fixed at 2026-08-31 in backend (`AS_OF` constant).
+- Recap `as_of` is `date.today()` (`main.py`, in `recap()`), not a frozen constant. It changes run to
+  run, so assert the shape rather than the value.
