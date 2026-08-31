@@ -70,6 +70,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             ticket REAL NOT NULL DEFAULT 0,
             travel REAL NOT NULL DEFAULT 0,
             drinks_food_merch REAL NOT NULL DEFAULT 0,
+            sets_sheet INTEGER NOT NULL DEFAULT 0,
             source TEXT,
             source_tab TEXT
         );
@@ -120,6 +121,7 @@ def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
         "drinks_food_merch": merch,
         "total": total,
         "sets_logged": sets_count,
+        "sets_sheet": row["sets_sheet"],
         "dollars_per_set": round(total / sets_count, 2) if sets_count else None,
         "status": status_for(row["show"], row["start_date"], row["end_date"]),
         "source": row["source"],
@@ -163,8 +165,8 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
         conn.execute(
             """INSERT INTO events
                (id, show, venue, city, year, start_date, end_date, date_display,
-                ticket, travel, drinks_food_merch, source, source_tab)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ticket, travel, drinks_food_merch, sets_sheet, source, source_tab)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 e["id"],
                 e["show"],
@@ -177,6 +179,7 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                 e.get("ticket") or 0,
                 e.get("travel") or 0,
                 e.get("drinks_food_merch") or 0,
+                e.get("sets_sheet") or 0,
                 e.get("source"),
                 e.get("source_tab"),
             ),

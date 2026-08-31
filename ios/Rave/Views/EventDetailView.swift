@@ -93,10 +93,18 @@ struct EventDetailView: View {
         .font(emphasize ? .body.weight(.semibold) : .body)
     }
 
+    private func setsTitle(_ event: Event) -> String {
+        // The sheet's own count; the qualifier disappears once the gap is reconciled.
+        guard let sheet = event.setsSheet, sheet > event.setsLogged else {
+            return "Sets (\(event.setsLogged))"
+        }
+        return "Sets (\(event.setsLogged) of \(sheet) on sheet)"
+    }
+
     private func setsCard(_ event: Event) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Sets (\(event.setsLogged))").font(.headline)
+                Text(setsTitle(event)).font(.headline)
                 Spacer()
                 Button("Log a set") { showSet = true }
             }

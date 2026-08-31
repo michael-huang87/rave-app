@@ -42,6 +42,7 @@ struct Event: Identifiable, Codable, Hashable {
     var drinksFoodMerch: Double
     var total: Double
     var setsLogged: Int
+    var setsSheet: Int?
     var dollarsPerSet: Double?
     var status: EventStatus
     var source: String?
