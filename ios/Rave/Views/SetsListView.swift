@@ -34,13 +34,26 @@ struct SetsListView: View {
 
     private var list: some View {
         List {
-            ForEach(filtered) { entry in
-                NavigationLink(value: entry.eventId) {
-                    SetRow(entry: entry)
+            ForEach(days, id: \.key) { day in
+                Section {
+                    ForEach(day.values) { entry in
+                        NavigationLink(value: entry.eventId) {
+                            SetRow(entry: entry)
+                        }
+                        .listRowBackground(RaveTheme.card)
+                        .listRowInsets(RaveTheme.rowInsets)
+                    }
+                } header: {
+                    Text(Self.dayTitle(day.key, day.values.first))
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .listRowInsets(RaveTheme.headerInsets)
                 }
-                .listRowBackground(RaveTheme.card)
             }
         }
+        .listStyle(.plain)
+        // A List row is 44pt tall before its content has any say, which is most of a one-line row.
+        .environment(\.defaultMinListRowHeight, 30)
         .scrollContentBackground(.hidden)
         .overlay {
             if filtered.isEmpty {
@@ -61,6 +74,28 @@ struct SetsListView: View {
         }
     }
 
+    /// The date, show, and venue repeat for every set of a night, so they live in the header
+    /// instead of on 1248 rows. Sheet order inside a day is preserved by `grouped`.
+    private var days: [(key: String, values: [SetEntry])] {
+        filtered.grouped { $0.date ?? "" }
+    }
+
+    private static let headerFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE MMM d, yyyy"
+        return f
+    }()
+
+    private static func dayTitle(_ iso: String, _ entry: SetEntry?) -> String {
+        let parse = DateFormatter()
+        parse.dateFormat = "yyyy-MM-dd"
+        let date = parse.date(from: iso).map { headerFormatter.string(from: $0) } ?? "Undated"
+        return ([date, entry?.show, entry?.venue]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty })
+            .joined(separator: " · ")
+    }
+
     @MainActor
     private func reload() async {
         loading = sets.isEmpty
@@ -79,23 +114,20 @@ private struct SetRow: View {
     let entry: SetEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 8) {
             Text(entry.title)
-                .font(.headline)
+                .font(.subheadline)
                 .foregroundStyle(.white)
+                .lineLimit(1)
             // Most sets name a single artist matching the title; only b2b rows add anything.
             if entry.artists != [entry.title] {
+                Spacer(minLength: 8)
                 Text(entry.artists.joined(separator: ", "))
                     .font(.caption)
                     .foregroundStyle(RaveTheme.accent2)
+                    .lineLimit(1)
+                    .layoutPriority(-1)
             }
-            Text([entry.date, entry.show, entry.venue]
-                .compactMap { $0 }
-                .filter { !$0.isEmpty }
-                .joined(separator: " · "))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 4)
     }
 }

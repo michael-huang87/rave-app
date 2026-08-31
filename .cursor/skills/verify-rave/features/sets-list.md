@@ -11,7 +11,10 @@ The Sets tab lists every logged set, newest day first, in the order the sets wer
 ## How to get to it (user POV)
 
 - Open the **Sets** tab (second of four) in the iOS app.
-- Search with the field at the top.
+- Sets are grouped under sticky day headers reading `Sat Jun 20, 2026 · Said the Sky · Brooklyn Steel`.
+- Each set is one line: the title, plus the performer names right-aligned only when they differ from
+  the title (b2b rows). About 13 sets fit a screen against 4 before.
+- Search with the field at the top; grouping applies to the filtered results.
 - API equivalent: `GET /sets`, or `GET /sets?event_id=<id>`.
 
 ## Driving it with curl
@@ -35,4 +38,7 @@ Preconditions:
 - Adding `sheet_row` to a pre-existing `rave.db` happens automatically at startup (`ALTER TABLE` plus a
   backfill keyed on set id). A DB seeded before that change but with `data/sets.json` missing keeps
   NULL rows and falls back to arbitrary order.
-- The tab is a flat list — no date headers.
+- Date, show, and venue are **not** on the row; they are in the day header, since they repeat for every
+  set of a night.
+- Row height is set by `defaultMinListRowHeight`, not by the text. SwiftUI's 44pt default is most of a
+  one-line row, so both list tabs override it to 30.
