@@ -36,6 +36,7 @@ PERSONAL_SHOW_NAMES = {
     "nyc trip",
     "arizona trip",
     "red rocks trip",
+    "beautifica",
     "new york",
 }
 
@@ -405,7 +406,11 @@ def link_sets(events: list[dict], sets: list[dict]) -> tuple[list[dict], list[di
                 if e.get("year") == s.get("year") and shows_compatible(e.get("show"), s.get("show"))
             ]
             year_show_venue = [e for e in year_show if venues_compatible(e.get("venue"), s.get("venue"))]
-            pool = year_show_venue or year_show
+            # This last resort ignores dates, so it once carried a set six months
+            # onto the wrong show. Refuse a candidate whose venue contradicts; an
+            # unmatched set becomes a derived event and shows up in reconcile.py.
+            no_venue_conflict = [e for e in year_show if not e.get("venue") or not s.get("venue")]
+            pool = year_show_venue or no_venue_conflict
             if len(pool) == 1:
                 pick = pool[0]
             elif len(pool) > 1:

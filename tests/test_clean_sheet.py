@@ -64,3 +64,21 @@ def test_a_group_with_no_nearby_cost_row_still_derives_an_event():
     assert len(derived) == 1
     assert derived[0]["source"] == "derived_from_sets"
     assert sets[0]["event_id"] == derived[0]["id"]
+
+
+def test_last_resort_refuses_a_contradicting_venue():
+    """The date-blind fallback once carried a set six months onto the wrong show."""
+    tahoe = event("tahoe", "John Summit", "Tahoe Blue Event Center", "2025-02-22")
+    stray = set_row("John Summit", "John Summit", "LIV Beach", "2025-08-30")
+    linked, unmatched = link_sets([tahoe], [stray])
+    assert unmatched == [stray]
+    assert linked[0].get("event_id") is None
+
+
+def test_last_resort_still_links_a_set_with_no_venue():
+    """Refusing on a missing venue would strand sets that contradict nothing."""
+    tahoe = event("tahoe", "John Summit", "Tahoe Blue Event Center", "2025-02-22")
+    loose = set_row("John Summit", "John Summit", None, "2025-08-30")
+    linked, unmatched = link_sets([tahoe], [loose])
+    assert unmatched == []
+    assert linked[0]["event_id"] == "tahoe"
