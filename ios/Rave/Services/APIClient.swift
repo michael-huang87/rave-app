@@ -4,12 +4,14 @@ enum APIError: LocalizedError {
     case badURL
     case http(Int)
     case decode
+    case transport(String)
 
     var errorDescription: String? {
         switch self {
         case .badURL: return "Bad API URL"
         case .http(let code): return "Server returned \(code)"
         case .decode: return "Could not read the server response"
+        case .transport(let message): return message
         }
     }
 }
@@ -17,8 +19,38 @@ enum APIError: LocalizedError {
 actor APIClient {
     static let shared = APIClient()
 
-    /// Point this at the machine running `backend/` (localhost in Simulator).
-    var baseURL = URL(string: "http://127.0.0.1:8000")!
+    static var configuredBaseURL: String {
+        resolveBaseURL().absoluteString
+    }
+
+    /// Simulator uses localhost; a physical device uses `APIBaseURL` from Info.plist.
+    var baseURL: URL
+
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 30
+        config.allowsCellularAccess = true
+        config.allowsExpensiveNetworkAccess = true
+        config.allowsConstrainedNetworkAccess = true
+        return URLSession(configuration: config)
+    }()
+
+    private init() {
+        baseURL = Self.resolveBaseURL()
+    }
+
+    private static func resolveBaseURL() -> URL {
+        #if targetEnvironment(simulator)
+        return URL(string: "http://127.0.0.1:8000")!
+        #else
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String,
+              let url = URL(string: raw) else {
+            return URL(string: "http://127.0.0.1:8000")!
+        }
+        return url
+        #endif
+    }
 
     private let decoder: JSONDecoder = {
         let d = JSONDecoder()
@@ -80,7 +112,13 @@ actor APIClient {
 
     private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
         let url = try makeURL(path, query: query)
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(from: url)
+        } catch {
+            throw APIError.transport(Self.describe(error))
+        }
         try Self.check(response)
         do { return try decoder.decode(T.self, from: data) } catch { throw APIError.decode }
     }
@@ -91,9 +129,31 @@ actor APIClient {
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(body)
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw APIError.transport(Self.describe(error))
+        }
         try Self.check(response)
         do { return try decoder.decode(T.self, from: data) } catch { throw APIError.decode }
+    }
+
+    private static func describe(_ error: Error) -> String {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet:
+                return "No internet connection. If using Tailscale, confirm it is connected."
+            case .timedOut:
+                return "Timed out reaching the API. Confirm your Mac is awake and the backend is running."
+            case .cannotConnectToHost, .networkConnectionLost:
+                return "Could not connect to the API host. Check Tailscale on both devices and Settings → Rave → enable Cellular Data and Local Network."
+            default:
+                return urlError.localizedDescription
+            }
+        }
+        return error.localizedDescription
     }
 
     private static func check(_ response: URLResponse) throws {

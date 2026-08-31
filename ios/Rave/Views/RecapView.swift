@@ -20,7 +20,14 @@ struct RecapView: View {
                     }
                     .scrollContentBackground(.hidden)
                 } else if let error {
-                    ContentUnavailableView("No recap yet", systemImage: "chart.bar", description: Text(error))
+                    ContentUnavailableView {
+                        Label("No recap yet", systemImage: "chart.bar")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Retry") { Task { await load() } }
+                            .buttonStyle(.borderedProminent)
+                    }
                 } else {
                     ProgressView()
                 }
