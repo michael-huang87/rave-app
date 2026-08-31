@@ -437,9 +437,33 @@ def recap() -> dict:
     }
 
 
+def rows_not_in_snapshot(conn: sqlite3.Connection) -> int:
+    """Rows the snapshot cannot regenerate, i.e. anything entered in the app."""
+    snapshot = set()
+    for name in ("events.json", "sets.json"):
+        path = DATA / name
+        if path.exists():
+            snapshot |= {r["id"] for r in json.loads(path.read_text())}
+    return sum(
+        1
+        for table in ("events", "sets")
+        for row in conn.execute(f"SELECT id FROM {table}")
+        if row["id"] not in snapshot
+    )
+
+
 @app.post("/admin/reload-snapshot")
-def reload_snapshot() -> dict:
+def reload_snapshot(force: bool = False) -> dict:
     """Drop and re-seed from data/*.json. Dev helper, not a migration tool."""
+    if DB_PATH.exists() and not force:
+        with db() as conn:
+            extra = rows_not_in_snapshot(conn)
+        if extra:
+            raise HTTPException(
+                409,
+                f"{extra} rows are not in the snapshot and would be lost. "
+                "Re-send with ?force=true to drop them anyway.",
+            )
     if DB_PATH.exists():
         DB_PATH.unlink()
     with db() as conn:

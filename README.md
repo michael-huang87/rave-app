@@ -56,9 +56,14 @@ The sheet is the source of truth, so corrections belong in the sheet or in
 `scripts/clean_sheet.py`, never in the DB directly.
 
 ```bash
-cp backend/rave.db backend/rave.db.bak   # reload-snapshot deletes the DB
+cp backend/rave.db backend/rave.db.bak   # reload-snapshot drops the DB
 python3 scripts/reconcile.py             # every remaining discrepancy, by category
 ```
+
+`POST /admin/reload-snapshot` returns 409 rather than dropping rows the
+snapshot cannot regenerate; pass `?force=true` to override. It cannot add new
+columns to an existing DB, so a schema change needs `rm backend/rave.db` and a
+restart instead.
 
 `reconcile.py` is read-only and always exits 0. Re-run it after editing the
 sheet to watch the lists shrink. Empty sections still print their `(0)` so a

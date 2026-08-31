@@ -113,3 +113,14 @@ def test_status_is_date_based(client):
     assert past.json()["status"] == "attended"
     off = client.post("/events", json={"show": "Ghost Fest (Cancelled)", "start_date": "2020-01-01"})
     assert off.json()["status"] == "cancelled"
+
+
+def test_reload_snapshot_refuses_to_drop_hand_entered_rows(client):
+    created = client.post("/events", json={"show": "Hand Entered", "start_date": "2020-01-01"})
+    assert created.status_code == 201
+    blocked = client.post("/admin/reload-snapshot")
+    assert blocked.status_code == 409
+    assert "would be lost" in blocked.json()["detail"]
+    assert client.get(f"/events/{created.json()['id']}").status_code == 200
+    assert client.post("/admin/reload-snapshot?force=true").status_code == 200
+    assert client.get(f"/events/{created.json()['id']}").status_code == 404
