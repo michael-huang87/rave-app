@@ -1,11 +1,12 @@
 # Shows list
 
-The shows list lets a user browse all tracked shows/festivals, optionally filtered by planned vs attended vs cancelled, or by year.
+The shows list lets a user browse all tracked shows/festivals, optionally filtered by planned vs attended vs skipped, or by year.
 
 ## Sub-features
 
 - `list-all` returns every event ordered by start date.
-- `list-status` filters by `planned`, `attended`, or `cancelled`.
+- `list-status` filters by `planned`, `attended`, or `skipped`. There is no `cancelled` status;
+  `?status=cancelled` returns an empty list.
 - `list-year` filters by calendar year on the event row.
 
 ## How to get to it (user POV)
@@ -37,7 +38,11 @@ Preconditions:
 - `days` is computed from the date range (`end_date - start_date + 1`, floored at 1). A festival is just
   `days > 1` — 44 of 239 events. Two separate rows on back-to-back days (Illenium's two nights) stay two
   shows; that is deliberate, a two-night run is not a festival.
-- Status is **computed**, not stored: cancelled if `(cancelled)` in show name; attended if sets logged and end date ≤ `as_of` (2026-08-31); else planned.
+- Status is **computed**, not stored: `skipped` if the show name contains `(cancelled)` or `(skipped)`,
+  `attended` if the end date is on or before today, else `planned`. Logged sets do **not** gate it — a
+  past show with no sets is still attended, because sets stopped being logged after 2026-06-20.
+- The comparison is against `date.today()`, so status moves as real time passes. Tests that pin a
+  status must pick dates far from today rather than assuming a frozen `as_of`.
 - Empty DB returns `[]` — not an error. Seed with `scripts/clean_sheet.py` or create an event first.
 - List rows omit nested `sets`; use show detail for set arrays.
 - Sets, spend, and city are **not** on the list row by design; check show detail for those.
