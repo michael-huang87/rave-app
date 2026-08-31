@@ -388,12 +388,14 @@ def link_sets(events: list[dict], sets: list[dict]) -> tuple[list[dict], list[di
         pick = None
         if show_venue:
             pick = closest_event(show_venue, s)
+        elif len(venue_hits) == 1:
+            # The Sets tab writes one umbrella show name ("EDC Preparty") across
+            # several rooms in a night, so venue is the harder fact.
+            pick = venue_hits[0]
         elif len(show_hits) == 1:
             pick = show_hits[0]
         elif len(show_hits) > 1:
             pick = closest_event(show_hits, s)
-        elif len(venue_hits) == 1:
-            pick = venue_hits[0]
         elif len(venue_hits) > 1:
             pick = closest_event(venue_hits, s)
         else:
@@ -425,8 +427,32 @@ def _date_ord(value: str | None) -> int:
         return 0
 
 
-def derive_events_from_sets(unmatched: list[dict], existing_ids: set[str]) -> list[dict]:
+def find_host_event(events: list[dict], sample: dict, start: str | None, end: str | None,
+                    gap_days: int = 2) -> dict | None:
+    """A sheet event for the same show and venue whose dates touch this group's.
+
+    Countdown NYE runs Dec 30 to Jan 1, so the Costs tab (money) and the Sets tab
+    (sets) land in different years and describe one festival as two events.
+    """
+    if not start:
+        return None
+    a, b = _date_ord(start), _date_ord(end or start)
+    for e in events:
+        if e.get("source") != "sheet" or not e.get("start_date"):
+            continue
+        c, d = _date_ord(e["start_date"]), _date_ord(e.get("end_date") or e["start_date"])
+        if max(a, c) - min(b, d) > gap_days:
+            continue
+        if shows_compatible(e.get("show"), sample.get("show")) and venues_compatible(
+            e.get("venue"), sample.get("venue")
+        ):
+            return e
+    return None
+
+
+def derive_events_from_sets(unmatched: list[dict], events: list[dict]) -> list[dict]:
     """One event per (year, show, venue) covering min/max set dates. Used for 2022 (no cost tab)."""
+    existing_ids = {e["id"] for e in events}
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for s in unmatched:
         key = (s.get("year"), norm_show(s.get("show")), norm_venue(s.get("venue")))
@@ -438,6 +464,11 @@ def derive_events_from_sets(unmatched: list[dict], existing_ids: set[str]) -> li
         start = dates[0] if dates else None
         end = dates[-1] if dates else None
         sample = group[0]
+        host = find_host_event(events, sample, start, end)
+        if host:
+            for s in group:
+                s["event_id"] = host["id"]
+            continue
         eid = stable_id(year, show_n, start, venue_n)
         if eid in existing_ids:
             eid = stable_id("derived", year, show_n, start, venue_n)
@@ -604,8 +635,7 @@ def main() -> None:
     events, skipped_personal = load_events(wb)
     sets = load_sets(wb)
     sets, unmatched = link_sets(events, sets)
-    existing = {e["id"] for e in events}
-    derived = derive_events_from_sets(unmatched, existing)
+    derived = derive_events_from_sets(unmatched, events)
     events.extend(derived)
     # second pass: derived events now exist; anything still unmatched stays unmatched
     still_unmatched = [s for s in sets if not s.get("event_id")]
