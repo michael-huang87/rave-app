@@ -49,9 +49,13 @@ struct Event: Identifiable, Codable, Hashable {
     var setsSheet: Int?
     var dollarsPerSet: Double?
     var status: EventStatus
+    var days: Int?
     var source: String?
     var sourceTab: String?
     var sets: [SetEntry]?
+
+    /// The sheet dates a festival as a range; a single night is a show.
+    var isFestival: Bool { (days ?? 1) > 1 }
 }
 
 struct SetEntry: Identifiable, Codable, Hashable {

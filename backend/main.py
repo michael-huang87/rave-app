@@ -132,6 +132,16 @@ def status_for(show: str, start: str | None, end: str | None) -> str:
     return "attended" if last and date.fromisoformat(last) <= date.today() else "planned"
 
 
+def day_span(start: str | None, end: str | None) -> int:
+    """Nights the event covers. 2+ is what makes it a festival; the sheet already dates the range."""
+    if not start:
+        return 1
+    try:
+        return max(1, (date.fromisoformat(end or start) - date.fromisoformat(start)).days + 1)
+    except ValueError:
+        return 1
+
+
 def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
     ticket, travel, merch = money(row["ticket"]), money(row["travel"]), money(row["drinks_food_merch"])
     total = round(ticket + travel + merch, 2)
@@ -152,6 +162,7 @@ def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
         "sets_sheet": row["sets_sheet"],
         "dollars_per_set": round(total / sets_count, 2) if sets_count else None,
         "status": status_for(row["show"], row["start_date"], row["end_date"]),
+        "days": day_span(row["start_date"], row["end_date"]),
         "source": row["source"],
         "source_tab": row["source_tab"],
     }

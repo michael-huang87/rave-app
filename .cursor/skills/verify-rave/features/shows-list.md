@@ -17,6 +17,8 @@ The shows list lets a user browse all tracked shows/festivals, optionally filter
   tinted by status — cyan went, pink planned, grey skipped — instead of a status capsule.
 - Under the **Planned** filter only, months and rows run soonest-first so the next show is the top row.
   Every other filter stays newest-first.
+- Multi-day events carry a pink tent glyph after the show name; show detail spells it out as
+  `Festival · 5 days`.
 - API equivalent: `GET /events` with optional `status` and `year` query params.
 
 ## Driving it with curl
@@ -32,6 +34,9 @@ Preconditions:
 
 ## Gotchas
 
+- `days` is computed from the date range (`end_date - start_date + 1`, floored at 1). A festival is just
+  `days > 1` — 44 of 239 events. Two separate rows on back-to-back days (Illenium's two nights) stay two
+  shows; that is deliberate, a two-night run is not a festival.
 - Status is **computed**, not stored: cancelled if `(cancelled)` in show name; attended if sets logged and end date ≤ `as_of` (2026-08-31); else planned.
 - Empty DB returns `[]` — not an error. Seed with `scripts/clean_sheet.py` or create an event first.
 - List rows omit nested `sets`; use show detail for set arrays.

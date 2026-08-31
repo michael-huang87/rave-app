@@ -30,6 +30,12 @@ Taken from the sheet, not a separate column:
 
 Logged sets do not gate the status. Sets stopped being logged after 2026-06-20, so a past show with no sets is still a show you went to.
 
+## Festivals
+
+`days = end_date - start_date + 1`. Anything over 1 is a festival — 44 events, from 2-day
+Wobbleland to 7-day EDSea. Nothing is inferred; the sheet already dates a festival as a range.
+Two separate rows on back-to-back days (Illenium's two nights) stay two shows.
+
 ## Spend
 
 Three buckets only: Ticket, Travel, Drinks/Food/Merch. `total = sum`. `$ per set = total / sets_logged`, blank when there are no sets.

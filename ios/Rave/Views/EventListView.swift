@@ -141,6 +141,12 @@ private struct EventRow: View {
                 .font(.subheadline)
                 .foregroundStyle(.white)
                 .lineLimit(1)
+            if event.isFestival {
+                Image(systemName: "tent.fill")
+                    .font(.caption2)
+                    .foregroundStyle(RaveTheme.accent)
+                    .accessibilityLabel("Festival, \(event.days ?? 0) days")
+            }
             Spacer(minLength: 8)
             if let location = event.venue ?? event.city, !location.isEmpty {
                 Text(location)

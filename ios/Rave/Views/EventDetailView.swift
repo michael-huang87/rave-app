@@ -53,6 +53,11 @@ struct EventDetailView: View {
                 .foregroundStyle(event.status.tint)
             Text(event.dateDisplay ?? event.startDate ?? "")
                 .font(.title3.weight(.semibold))
+            if event.isFestival, let days = event.days {
+                Label("Festival · \(days) days", systemImage: "tent.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(RaveTheme.accent)
+            }
             if let venue = event.venue { Text(venue) }
             if let city = event.city { Text(city).foregroundStyle(.secondary) }
         }

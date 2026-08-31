@@ -188,3 +188,29 @@ def test_stats_match_the_sheets_own_analytics(client):
 
     sets = snapshot(SETS_SNAPSHOT)
     assert len(cities) == len({s["city"].strip().lower() for s in sets if s.get("city")})
+
+
+@needs_snapshot
+def test_multi_day_events_are_festivals(client):
+    """A festival is just an event the sheet gave a 2+ day range; nothing is inferred."""
+    events = client.get("/events").json()
+    by_show = {}
+    for e in events:
+        by_show.setdefault(e["show"], []).append(e)
+
+    assert max(e["days"] for e in by_show["EDSea"]) == 7
+    assert max(e["days"] for e in by_show["Lost Lands"]) == 5
+    assert all(e["days"] == 1 for e in by_show["NGHTMRE"])
+
+    snapshot_events = snapshot(SNAPSHOT)
+    expected = sum(
+        1 for e in snapshot_events
+        if e.get("end_date") and e.get("start_date") and e["end_date"] != e["start_date"]
+    )
+    assert sum(1 for e in events if e["days"] > 1) == expected == 44
+    assert all(e["days"] >= 1 for e in events), "days is never zero or negative"
+
+
+def test_days_defaults_to_one_for_a_hand_added_event(client):
+    created = client.post("/events", json={"show": "One Nighter", "start_date": "2026-09-05"}).json()
+    assert created["days"] == 1
