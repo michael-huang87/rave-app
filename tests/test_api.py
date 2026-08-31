@@ -119,8 +119,9 @@ def test_create_event_log_set_and_spend(client):
 def test_status_is_date_based(client):
     past = client.post("/events", json={"show": "Past Show", "start_date": "2020-01-01"})
     assert past.json()["status"] == "attended"
-    off = client.post("/events", json={"show": "Ghost Fest (Cancelled)", "start_date": "2020-01-01"})
-    assert off.json()["status"] == "cancelled"
+    for name in ("Ghost Fest (Cancelled)", "Bailed Fest (Skipped)"):
+        off = client.post("/events", json={"show": name, "start_date": "2020-01-01"})
+        assert off.json()["status"] == "skipped", name
 
 
 def test_reload_snapshot_refuses_to_drop_hand_entered_rows(client):

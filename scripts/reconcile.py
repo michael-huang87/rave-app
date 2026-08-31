@@ -17,8 +17,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(ROOT / "backend"))
 
 from clean_sheet import find_host_event, venues_compatible  # noqa: E402
+from main import NOT_ATTENDED_MARKERS  # noqa: E402
 
 
 def load(name: str) -> list[dict]:
@@ -55,7 +57,7 @@ def main() -> None:
         last = e.get("end_date") or e.get("start_date")
         if linked.get(e["id"], 0) or not last or last > today:
             continue
-        if "(cancelled)" in e["show"].lower():
+        if any(m in e["show"].lower() for m in NOT_ATTENDED_MARKERS):
             continue
         rows.append(f"  {e.get('start_date')}  sheet={e.get('sets_sheet') or 0:>2}  {where(e)}")
         for s in sets:

@@ -97,9 +97,15 @@ def money(value: Any) -> float:
         return 0.0
 
 
+# One bucket for "did not go", however it happened. Marked in the show name
+# because the sheet has no status column.
+NOT_ATTENDED_MARKERS = ("(cancelled)", "(skipped)")
+
+
 def status_for(show: str, start: str | None, end: str | None) -> str:
-    if "(cancelled)" in (show or "").lower():
-        return "cancelled"
+    lowered = (show or "").lower()
+    if any(m in lowered for m in NOT_ATTENDED_MARKERS):
+        return "skipped"
     last = end or start
     return "attended" if last and date.fromisoformat(last) <= date.today() else "planned"
 

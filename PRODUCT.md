@@ -23,7 +23,8 @@ Empty formula-fill rows on Costs2 are ignored. Footer "Total" rows are ignored. 
 
 Taken from the sheet, not a separate column:
 
-- **Cancelled** — `(Cancelled)` in the show name
+- **Skipped** — `(Cancelled)` or `(Skipped)` in the show name. One bucket for
+  "did not go", whether the show was called off or you bailed. Spend still counts.
 - **Went** — the event's end date is in the past
 - **Planned** — the end date is in the future
 
