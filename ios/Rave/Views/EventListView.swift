@@ -16,7 +16,10 @@ struct EventListView: View {
                     ContentUnavailableView {
                         Label("Backend not reachable", systemImage: "wifi.slash")
                     } description: {
-                        Text(error + "\n\nStart the API on port 8000, then pull to refresh. iOS was not simulator-run on the Linux VM that scaffolded this project.")
+                        Text("URL: \(APIClient.configuredBaseURL)\n\n\(error)\n\nIf Safari works but this app does not, open Settings → Rave and turn on Cellular Data and Local Network. Confirm Tailscale is connected, then tap Retry.")
+                    } actions: {
+                        Button("Retry") { Task { await reload() } }
+                            .buttonStyle(.borderedProminent)
                     }
                 } else {
                     list
@@ -68,6 +71,7 @@ struct EventListView: View {
 
     @MainActor
     private func reload() async {
+        loading = events.isEmpty
         error = nil
         do {
             events = try await APIClient.shared.events()
