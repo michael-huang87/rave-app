@@ -5,6 +5,10 @@ enum RaveTheme {
     static let accent2 = Color(red: 0.35, green: 0.85, blue: 0.95)
     static let bg = Color.black
     static let card = Color(red: 0.10, green: 0.10, blue: 0.12)
+
+    // Both list tabs pack one line per row; the stock insets are built for two.
+    static let rowInsets = EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16)
+    static let headerInsets = EdgeInsets(top: 6, leading: 16, bottom: 4, trailing: 16)
 }
 
 enum EventStatus: String, Codable, CaseIterable, Identifiable {
@@ -118,5 +122,20 @@ struct SetDraft: Codable {
 extension Double {
     var usd: String {
         String(format: "$%.2f", self)
+    }
+}
+
+extension Array {
+    /// Groups into sections without reordering: keys come out in the order they were first seen,
+    /// so the caller's sort survives. Both list tabs rely on the server's ordering.
+    func grouped<Key: Hashable>(by key: (Element) -> Key) -> [(key: Key, values: [Element])] {
+        var order: [Key] = []
+        var buckets: [Key: [Element]] = [:]
+        for element in self {
+            let k = key(element)
+            if buckets[k] == nil { order.append(k) }
+            buckets[k, default: []].append(element)
+        }
+        return order.map { (key: $0, values: buckets[$0] ?? []) }
     }
 }

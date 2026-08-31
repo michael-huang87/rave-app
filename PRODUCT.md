@@ -43,4 +43,8 @@ days** (the sheet's `COUNTUNIQUEIFS` over `Sets[Date]`, not a count of events).
 
 ## Screens
 
-Shows list (filter planned / went / cancelled) → show detail (dates, venue, city, spend, sets) → add/edit show, log a set, log spend. Recap tab. Single user.
+Shows list (by month, filter planned / went / skipped) → show detail (dates, venue, city, spend, sets)
+→ add/edit show, log a set, log spend. Sets tab, Stats tab, Recap tab. Single user.
+
+The Shows list runs newest-first, except under **Planned**, where it flips to soonest-first — the
+next show is the one that matters.
