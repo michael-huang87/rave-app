@@ -75,6 +75,10 @@ actor APIClient {
         try await get("/events/\(id)")
     }
 
+    func sets() async throws -> [SetEntry] {
+        try await get("/sets")
+    }
+
     func recap() async throws -> Recap {
         try await get("/recap")
     }
