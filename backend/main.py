@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 DB_PATH = Path(os.environ.get("RAVE_DB", Path(__file__).resolve().parent / "rave.db"))
-AS_OF = date(2026, 8, 31)
 
 
 @asynccontextmanager
@@ -71,6 +70,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             ticket REAL NOT NULL DEFAULT 0,
             travel REAL NOT NULL DEFAULT 0,
             drinks_food_merch REAL NOT NULL DEFAULT 0,
+            sets_sheet INTEGER NOT NULL DEFAULT 0,
             source TEXT,
             source_tab TEXT
         );
@@ -97,14 +97,17 @@ def money(value: Any) -> float:
         return 0.0
 
 
-def status_for(show: str, start: str | None, end: str | None, sets_count: int, as_of: date = AS_OF) -> str:
-    if "(cancelled)" in (show or "").lower():
-        return "cancelled"
-    last_s = end or start
-    last = date.fromisoformat(last_s) if last_s else None
-    if sets_count > 0 and last is not None and last <= as_of:
-        return "attended"
-    return "planned"
+# One bucket for "did not go", however it happened. Marked in the show name
+# because the sheet has no status column.
+NOT_ATTENDED_MARKERS = ("(cancelled)", "(skipped)")
+
+
+def status_for(show: str, start: str | None, end: str | None) -> str:
+    lowered = (show or "").lower()
+    if any(m in lowered for m in NOT_ATTENDED_MARKERS):
+        return "skipped"
+    last = end or start
+    return "attended" if last and date.fromisoformat(last) <= date.today() else "planned"
 
 
 def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
@@ -124,8 +127,9 @@ def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
         "drinks_food_merch": merch,
         "total": total,
         "sets_logged": sets_count,
+        "sets_sheet": row["sets_sheet"],
         "dollars_per_set": round(total / sets_count, 2) if sets_count else None,
-        "status": status_for(row["show"], row["start_date"], row["end_date"], sets_count),
+        "status": status_for(row["show"], row["start_date"], row["end_date"]),
         "source": row["source"],
         "source_tab": row["source_tab"],
     }
@@ -167,8 +171,8 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
         conn.execute(
             """INSERT INTO events
                (id, show, venue, city, year, start_date, end_date, date_display,
-                ticket, travel, drinks_food_merch, source, source_tab)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ticket, travel, drinks_food_merch, sets_sheet, source, source_tab)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 e["id"],
                 e["show"],
@@ -181,6 +185,7 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                 e.get("ticket") or 0,
                 e.get("travel") or 0,
                 e.get("drinks_food_merch") or 0,
+                e.get("sets_sheet") or 0,
                 e.get("source"),
                 e.get("source_tab"),
             ),
@@ -431,16 +436,40 @@ def recap() -> dict:
         for y in years
     }
     return {
-        "as_of": AS_OF.isoformat(),
+        "as_of": date.today().isoformat(),
         "all_time": recap_for(shaped_events, shaped_sets),
         "by_year": by_year,
         "counts": {"events": len(shaped_events), "sets": len(shaped_sets)},
     }
 
 
+def rows_not_in_snapshot(conn: sqlite3.Connection) -> int:
+    """Rows the snapshot cannot regenerate, i.e. anything entered in the app."""
+    snapshot = set()
+    for name in ("events.json", "sets.json"):
+        path = DATA / name
+        if path.exists():
+            snapshot |= {r["id"] for r in json.loads(path.read_text())}
+    return sum(
+        1
+        for table in ("events", "sets")
+        for row in conn.execute(f"SELECT id FROM {table}")
+        if row["id"] not in snapshot
+    )
+
+
 @app.post("/admin/reload-snapshot")
-def reload_snapshot() -> dict:
+def reload_snapshot(force: bool = False) -> dict:
     """Drop and re-seed from data/*.json. Dev helper, not a migration tool."""
+    if DB_PATH.exists() and not force:
+        with db() as conn:
+            extra = rows_not_in_snapshot(conn)
+        if extra:
+            raise HTTPException(
+                409,
+                f"{extra} rows are not in the snapshot and would be lost. "
+                "Re-send with ?force=true to drop them anyway.",
+            )
     if DB_PATH.exists():
         DB_PATH.unlink()
     with db() as conn:

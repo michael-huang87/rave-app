@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
@@ -10,6 +11,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 SNAPSHOT = ROOT / "data" / "events.json"
+SETS_SNAPSHOT = ROOT / "data" / "sets.json"
+
+
+def snapshot(path: Path) -> list[dict]:
+    return json.loads(path.read_text())
 needs_snapshot = pytest.mark.skipif(
     not SNAPSHOT.exists(), reason="local data/events.json not generated"
 )
@@ -48,14 +54,15 @@ def test_list_events_seeded(client):
 
 @needs_snapshot
 def test_event_detail_includes_sets_and_spend(client):
-    events = client.get("/events").json()
-    edc = next(e for e in events if e["show"] == "EDC Las Vegas" and e["year"] == 2026)
-    detail = client.get(f"/events/{edc['id']}").json()
-    assert detail["sets_logged"] == 41
-    assert detail["ticket"] == 1005.08
-    assert detail["travel"] == 430.8
-    assert abs(detail["total"] - 1435.88) < 0.01
-    assert len(detail["sets"]) == 41
+    """Counts come from the snapshot, not literals: the sheet changes, the contract does not."""
+    source = next(e for e in snapshot(SNAPSHOT) if e["show"] == "EDC Las Vegas" and e["year"] == 2026)
+    expected_sets = sum(1 for s in snapshot(SETS_SNAPSHOT) if s["event_id"] == source["id"])
+    detail = client.get(f"/events/{source['id']}").json()
+    assert detail["sets_logged"] == expected_sets
+    assert len(detail["sets"]) == expected_sets
+    assert detail["ticket"] == source["ticket"]
+    assert detail["travel"] == source["travel"]
+    assert abs(detail["total"] - (source["ticket"] + source["travel"] + source["drinks_food_merch"])) < 0.01
     assert detail["sets"][0]["title"]
     assert "artists" in detail["sets"][0]
 
@@ -64,17 +71,18 @@ def test_event_detail_includes_sets_and_spend(client):
 def test_list_sets(client):
     r = client.get("/sets")
     assert r.status_code == 200
-    sets = r.json()
-    assert len(sets) == 1241
+    assert len(r.json()) == len(snapshot(SETS_SNAPSHOT))
 
 
 @needs_snapshot
 def test_recap(client):
+    sets = snapshot(SETS_SNAPSHOT)
     recap = client.get("/recap").json()
-    assert recap["all_time"]["sets"] == 1241
-    assert recap["all_time"]["set_titles"] == 705
-    assert recap["by_year"]["2025"]["sets"] == 472
-    assert recap["by_year"]["2025"]["shows"] == 56
+    assert recap["all_time"]["sets"] == len(sets)
+    assert recap["all_time"]["set_titles"] == len({s["title"] for s in sets})
+    for year, bucket in recap["by_year"].items():
+        assert bucket["sets"] == sum(1 for s in sets if str(s.get("year")) == year)
+    assert sum(b["sets"] for b in recap["by_year"].values()) == len(sets)
 
 
 def test_create_event_log_set_and_spend(client):
@@ -84,7 +92,7 @@ def test_create_event_log_set_and_spend(client):
             "show": "Smoke Test Showcase",
             "venue": "Warehouse",
             "city": "Oakland, CA",
-            "start_date": "2026-09-01",
+            "start_date": "2099-01-01",
             "ticket": 40,
         },
     )
@@ -99,10 +107,29 @@ def test_create_event_log_set_and_spend(client):
     assert spend.json()["total"] == 60.5
     logged = client.post(
         f"/events/{eid}/sets",
-        json={"title": "Test Artist b2b Other", "artists": ["Test Artist", "Other"], "date": "2026-09-01"},
+        json={"title": "Test Artist b2b Other", "artists": ["Test Artist", "Other"], "date": "2099-01-01"},
     )
     assert logged.status_code == 201
     assert logged.json()["venue"] == "Warehouse"
     detail = client.get(f"/events/{eid}").json()
     assert detail["sets_logged"] == 1
     assert detail["dollars_per_set"] == 60.5
+
+
+def test_status_is_date_based(client):
+    past = client.post("/events", json={"show": "Past Show", "start_date": "2020-01-01"})
+    assert past.json()["status"] == "attended"
+    for name in ("Ghost Fest (Cancelled)", "Bailed Fest (Skipped)"):
+        off = client.post("/events", json={"show": name, "start_date": "2020-01-01"})
+        assert off.json()["status"] == "skipped", name
+
+
+def test_reload_snapshot_refuses_to_drop_hand_entered_rows(client):
+    created = client.post("/events", json={"show": "Hand Entered", "start_date": "2020-01-01"})
+    assert created.status_code == 201
+    blocked = client.post("/admin/reload-snapshot")
+    assert blocked.status_code == 409
+    assert "would be lost" in blocked.json()["detail"]
+    assert client.get(f"/events/{created.json()['id']}").status_code == 200
+    assert client.post("/admin/reload-snapshot?force=true").status_code == 200
+    assert client.get(f"/events/{created.json()['id']}").status_code == 404

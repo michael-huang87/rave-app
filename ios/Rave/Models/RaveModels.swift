@@ -8,14 +8,14 @@ enum RaveTheme {
 }
 
 enum EventStatus: String, Codable, CaseIterable, Identifiable {
-    case attended, planned, cancelled
+    case attended, planned, skipped
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .attended: return "Went"
         case .planned: return "Planned"
-        case .cancelled: return "Cancelled"
+        case .skipped: return "Skipped"
         }
     }
 
@@ -23,7 +23,7 @@ enum EventStatus: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .attended: return RaveTheme.accent2
         case .planned: return RaveTheme.accent
-        case .cancelled: return .secondary
+        case .skipped: return .secondary
         }
     }
 }
@@ -42,6 +42,7 @@ struct Event: Identifiable, Codable, Hashable {
     var drinksFoodMerch: Double
     var total: Double
     var setsLogged: Int
+    var setsSheet: Int?
     var dollarsPerSet: Double?
     var status: EventStatus
     var source: String?

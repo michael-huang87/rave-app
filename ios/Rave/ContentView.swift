@@ -5,6 +5,8 @@ struct ContentView: View {
         TabView {
             EventListView()
                 .tabItem { Label("Shows", systemImage: "sparkles") }
+            SetsListView()
+                .tabItem { Label("Sets", systemImage: "music.note.list") }
             RecapView()
                 .tabItem { Label("Recap", systemImage: "chart.bar.fill") }
         }

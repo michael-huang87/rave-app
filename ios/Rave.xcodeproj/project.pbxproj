@@ -10,6 +10,7 @@
 		20BDDC6A844E4C43A8AD1149 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31BBB87AA721441794052FCB /* ContentView.swift */; };
 		23F11D45ED8D42F794F33A17 /* LogSetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6723B972711474D886230FD /* LogSetView.swift */; };
 		37C065C96A934829843CEEED /* EventListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9991EA08D8442FDB5DE56B1 /* EventListView.swift */; };
+		FBBBE38B7CFE4513881591A2 /* SetsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E513D027442908755314D /* SetsListView.swift */; };
 		38B79B74B08745A48480748B /* RecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DED41FCE98941FEA1FE97A4 /* RecapView.swift */; };
 		3D391EA81CEF495F86A91B00 /* EventDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E14D6276F7B471B9B85D5D6 /* EventDetailView.swift */; };
 		6DF7EBE739FD43AA9F515AAA /* RaveModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E79CE84A3A4450848D5ADE /* RaveModels.swift */; };
@@ -30,6 +31,7 @@
 		8E23B85CA7164EA7A3A38AA7 /* LogSpendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSpendView.swift; sourceTree = "<group>"; };
 		A6723B972711474D886230FD /* LogSetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSetView.swift; sourceTree = "<group>"; };
 		B9991EA08D8442FDB5DE56B1 /* EventListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventListView.swift; sourceTree = "<group>"; };
+		0E8E513D027442908755314D /* SetsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetsListView.swift; sourceTree = "<group>"; };
 		C0A18230BA54485EAABCA720 /* Rave.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rave.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5E79CE84A3A4450848D5ADE /* RaveModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaveModels.swift; sourceTree = "<group>"; };
 		DA8A9FEF90CF45838C47ADAF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -89,6 +91,7 @@
 			isa = PBXGroup;
 			children = (
 				B9991EA08D8442FDB5DE56B1 /* EventListView.swift */,
+				0E8E513D027442908755314D /* SetsListView.swift */,
 				8E14D6276F7B471B9B85D5D6 /* EventDetailView.swift */,
 				2E27DE59E550497ABA8BFACD /* EventFormView.swift */,
 				A6723B972711474D886230FD /* LogSetView.swift */,
@@ -180,6 +183,7 @@
 				6DF7EBE739FD43AA9F515AAA /* RaveModels.swift in Sources */,
 				D8A6767462024799AEAB1709 /* APIClient.swift in Sources */,
 				37C065C96A934829843CEEED /* EventListView.swift in Sources */,
+				FBBBE38B7CFE4513881591A2 /* SetsListView.swift in Sources */,
 				3D391EA81CEF495F86A91B00 /* EventDetailView.swift in Sources */,
 				87AFB6054A7943A5BDA4E94F /* EventFormView.swift in Sources */,
 				23F11D45ED8D42F794F33A17 /* LogSetView.swift in Sources */,
