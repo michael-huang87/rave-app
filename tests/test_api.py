@@ -133,3 +133,35 @@ def test_reload_snapshot_refuses_to_drop_hand_entered_rows(client):
     assert client.get(f"/events/{created.json()['id']}").status_code == 200
     assert client.post("/admin/reload-snapshot?force=true").status_code == 200
     assert client.get(f"/events/{created.json()['id']}").status_code == 404
+
+
+@needs_snapshot
+def test_sets_come_back_in_sheet_order(client):
+    """The sheet's row order is the order the sets were seen; alphabetical destroyed it."""
+    sets = client.get("/sets").json()
+    by_id = {s["id"]: s.get("sheet_row") for s in snapshot(SETS_SNAPSHOT)}
+
+    dates = [s["date"] for s in sets]
+    assert dates == sorted(dates, reverse=True), "days should stay newest-first"
+
+    for day in ("2026-05-17", "2025-10-25"):
+        rows = [by_id[s["id"]] for s in sets if s["date"] == day]
+        assert len(rows) > 1, f"{day} needs several sets to be worth checking"
+        assert rows == sorted(rows), f"{day} lost sheet order"
+        titles = [s["title"] for s in sets if s["date"] == day]
+        assert titles != sorted(titles), f"{day} is still alphabetical"
+
+
+@needs_snapshot
+def test_hand_logged_set_sorts_after_the_sheet_rows_of_its_day(client):
+    """A set logged in the app has no sheet_row; it belongs at the end of its night, not the start."""
+    event = client.get("/events").json()[-1]
+    day = client.get(f"/sets?event_id={event['id']}").json()
+    assert day, "picked an event with no sets"
+
+    client.post(
+        f"/events/{event['id']}/sets",
+        json={"title": "AAA Encore", "artists": ["AAA Encore"], "date": day[0]["date"]},
+    )
+    same_day = [s["title"] for s in client.get(f"/sets?event_id={event['id']}").json() if s["date"] == day[0]["date"]]
+    assert same_day[-1] == "AAA Encore", same_day

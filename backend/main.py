@@ -83,10 +83,28 @@ def init_schema(conn: sqlite3.Connection) -> None:
             city TEXT,
             year INTEGER,
             date TEXT,
+            sheet_row INTEGER,
             artists_json TEXT NOT NULL DEFAULT '[]',
             FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
         );
         """
+    )
+    # A DB created before sheet_row existed still holds hand-entered rows worth keeping,
+    # so widen it in place rather than making anyone delete rave.db.
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(sets)")}
+    if "sheet_row" not in cols:
+        conn.execute("ALTER TABLE sets ADD COLUMN sheet_row INTEGER")
+        backfill_sheet_rows(conn)
+
+
+def backfill_sheet_rows(conn: sqlite3.Connection) -> None:
+    """Set ids already encode the sheet row, so this joins exactly rather than guessing."""
+    sets_path = DATA / "sets.json"
+    if not sets_path.exists():
+        return
+    conn.executemany(
+        "UPDATE sets SET sheet_row = ? WHERE id = ? AND sheet_row IS NULL",
+        [(s.get("sheet_row"), s["id"]) for s in json.loads(sets_path.read_text())],
     )
 
 
@@ -100,6 +118,10 @@ def money(value: Any) -> float:
 # One bucket for "did not go", however it happened. Marked in the show name
 # because the sheet has no status column.
 NOT_ATTENDED_MARKERS = ("(cancelled)", "(skipped)")
+
+# The sheet lists a night's sets in the order you saw them, so sheet_row is the only
+# time signal there is. Hand-logged sets have none and sort to the end of their day.
+SET_ORDER = "COALESCE(sheet_row, 1000000)"
 
 
 def status_for(show: str, start: str | None, end: str | None) -> str:
@@ -193,8 +215,8 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
     for s in sets:
         conn.execute(
             """INSERT INTO sets
-               (id, event_id, title, show, venue, city, year, date, artists_json)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               (id, event_id, title, show, venue, city, year, date, sheet_row, artists_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 s["id"],
                 s["event_id"],
@@ -204,6 +226,7 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                 s.get("city"),
                 s.get("year"),
                 s.get("date"),
+                s.get("sheet_row"),
                 json.dumps(s.get("artists") or []),
             ),
         )
@@ -285,7 +308,7 @@ def get_event(event_id: str) -> dict:
         sets = [
             shape_set(r)
             for r in conn.execute(
-                "SELECT * FROM sets WHERE event_id = ? ORDER BY date, title", (event_id,)
+                f"SELECT * FROM sets WHERE event_id = ? ORDER BY date, {SET_ORDER}", (event_id,)
             )
         ]
         event["sets"] = sets
@@ -393,10 +416,10 @@ def list_sets(event_id: str | None = None) -> list[dict]:
     with db() as conn:
         if event_id:
             rows = conn.execute(
-                "SELECT * FROM sets WHERE event_id = ? ORDER BY date DESC, title", (event_id,)
+                f"SELECT * FROM sets WHERE event_id = ? ORDER BY date DESC, {SET_ORDER}", (event_id,)
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM sets ORDER BY date DESC, title").fetchall()
+            rows = conn.execute(f"SELECT * FROM sets ORDER BY date DESC, {SET_ORDER}").fetchall()
         return [shape_set(r) for r in rows]
 
 

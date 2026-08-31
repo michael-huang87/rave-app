@@ -12,7 +12,7 @@ Source (public): [Google Sheet](https://docs.google.com/spreadsheets/d/1-J4MFiVG
 | --- | --- |
 | Costs (2023), Costs2 (2024), 2025, 2026 | Event rows. Date, Show, Venue, City, Ticket, Travel, Drinks/Food/Merch. Total and $ per set are computed. |
 | 2023 / 2024 calendars | **Not imported.** They mix hiking, dinners, daytrips. Show rows already live on Costs / Costs2. |
-| Sets | Every non-empty row. `Artist` = set title (b2bs allowed). `Artists` = comma-separated names. Linked to a parent event by show name + date/venue so you do not retype venue/city. |
+| Sets | Every non-empty row. `Artist` = set title (b2bs allowed). `Artists` = comma-separated names. Linked to a parent event by show name + date/venue so you do not retype venue/city. Row order is kept: it is the order you saw the sets. |
 | ArtistsVenues, Stats | **Derived.** Recomputed locally into `data/stats.json` and `GET /recap`. |
 
 Empty formula-fill rows on Costs2 are ignored. Footer "Total" rows are ignored. Personal trip wrappers on Costs/Costs2 (ski trips, city visits, Pokémon Go Fest, movies) are dropped. After you run `scripts/clean_sheet.py`, `data/CLEANING.md` lists exactly what this pass skipped.

@@ -647,7 +647,10 @@ def main() -> None:
     stats = compute_stats(events, sets, as_of)
 
     events.sort(key=lambda e: (e.get("start_date") or "", e.get("show") or ""), reverse=True)
-    sets.sort(key=lambda s: (s.get("date") or "", s.get("title") or ""), reverse=True)
+    # Descending by day, but ascending within a day: the sheet rows are the order you
+    # saw the sets, so reversing them inside a night would undo the point.
+    sets.sort(key=lambda s: s.get("sheet_row") or 0)
+    sets.sort(key=lambda s: s.get("date") or "", reverse=True)
 
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "events.json").write_text(json.dumps(events, indent=2) + "\n", encoding="utf-8")

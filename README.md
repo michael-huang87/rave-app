@@ -63,7 +63,8 @@ python3 scripts/reconcile.py             # every remaining discrepancy, by categ
 `POST /admin/reload-snapshot` returns 409 rather than dropping rows the
 snapshot cannot regenerate; pass `?force=true` to override. It cannot add new
 columns to an existing DB, so a schema change needs `rm backend/rave.db` and a
-restart instead.
+restart instead — except where `init_schema` carries an explicit migration, as it
+does for `sets.sheet_row`.
 
 `reconcile.py` is read-only and always exits 0. Re-run it after editing the
 sheet to watch the lists shrink. Empty sections still print their `(0)` so a
