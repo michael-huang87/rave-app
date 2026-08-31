@@ -500,6 +500,19 @@ def derive_events_from_sets(unmatched: list[dict], events: list[dict]) -> list[d
     return derived
 
 
+def day_counts(sets: list[dict], field: str, normalize) -> dict[str, set]:
+    """name -> set of dates it appears on. len() is the sheet's Times Visited / Shows Seen."""
+    out: dict[str, set] = defaultdict(set)
+    for s in sets:
+        if s.get(field):
+            out[normalize(s[field])].add(s.get("date"))
+    return out
+
+
+def display_for(sets: list[dict], field: str, normalize, key: str) -> str:
+    return next((s[field] for s in sets if s.get(field) and normalize(s[field]) == key), key)
+
+
 def compute_stats(events: list[dict], sets: list[dict], as_of: date) -> dict:
     for e in events:
         linked = sum(1 for s in sets if s["event_id"] == e["id"])
@@ -535,9 +548,17 @@ def compute_stats(events: list[dict], sets: list[dict], as_of: date) -> dict:
     # restore display casing from first occurrence
     display_artist = next((a for s in sets for a in s.get("artists", []) if norm(a) == top_artist[0]), top_artist[0])
 
-    venue_visits = Counter(norm_venue(e["venue"]) for e in events if e.get("venue"))
+    # The sheet's ArtistsVenues tab counts a venue or city by distinct dates in the Sets
+    # tab (COUNTUNIQUEIFS over Sets[Date]), not by event. Counting events instead put
+    # Midway at 29 against the sheet's 23; distinct set-days reproduces the sheet exactly.
+    venue_days = day_counts(sets, "venue", norm_venue)
+    city_days = day_counts(sets, "city", norm)
+    venue_visits = Counter({n: len(d) for n, d in venue_days.items()})
+    city_shows = Counter({n: len(d) for n, d in city_days.items()})
     top_venue_n, top_venue_c = venue_visits.most_common(1)[0] if venue_visits else ("", 0)
-    display_venue = next((e["venue"] for e in events if norm_venue(e.get("venue")) == top_venue_n), top_venue_n)
+    display_venue = display_for(sets, "venue", norm_venue, top_venue_n)
+    top_city_n, top_city_c = city_shows.most_common(1)[0] if city_shows else ("", 0)
+    display_city = display_for(sets, "city", norm, top_city_n)
 
     by_year = {}
     years = sorted({e["year"] for e in events if e.get("year")} | {s["year"] for s in sets if s.get("year")})
@@ -552,6 +573,7 @@ def compute_stats(events: list[dict], sets: list[dict], as_of: date) -> dict:
         "by_year": by_year,
         "top_artist": {"name": display_artist, "times_seen": top_artist[1]},
         "top_venue": {"name": display_venue, "times_visited": top_venue_c},
+        "top_city": {"name": display_city, "shows_seen": top_city_c},
         "sheet_stats_all_time": {
             "sets": 1241,
             "artists": 705,
@@ -566,11 +588,12 @@ def compute_stats(events: list[dict], sets: list[dict], as_of: date) -> dict:
             for n, c in artist_counts.most_common()
         ],
         "venues": [
-            {
-                "name": next((e["venue"] for e in events if norm_venue(e.get("venue")) == n), n),
-                "times_visited": c,
-            }
+            {"name": display_for(sets, "venue", norm_venue, n), "times_visited": c}
             for n, c in venue_visits.most_common()
+        ],
+        "cities": [
+            {"name": display_for(sets, "city", norm, n), "shows_seen": c}
+            for n, c in city_shows.most_common()
         ],
         "unique_set_titles": len({s["title"] for s in sets if s.get("title")}),
     }
@@ -662,6 +685,7 @@ def main() -> None:
         "by_year": stats["by_year"],
         "top_artist": stats["top_artist"],
         "top_venue": stats["top_venue"],
+        "top_city": stats["top_city"],
         "sheet_stats_all_time": stats["sheet_stats_all_time"],
         "unique_set_titles": stats.get("unique_set_titles"),
     }
@@ -673,6 +697,7 @@ def main() -> None:
     print("all_time", stats["all_time"])
     print("top_artist", stats["top_artist"])
     print("top_venue", stats["top_venue"])
+    print("top_city", stats["top_city"])
     print("skipped", skipped_personal)
     if still_unmatched:
         print("still unmatched sample:")
