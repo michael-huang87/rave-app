@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+backend/rave.db
+backend/*.db
+.DS_Store
+xcuserdata/
+DerivedData/
+*.xcuserstate
+.idea/
+.vscode/
+*.swp
+
+# Local-only show log (generate on your machine, do not commit)
+data/*.json
+data/CLEANING.md
+data/source/
+
