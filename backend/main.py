@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 DB_PATH = Path(os.environ.get("RAVE_DB", Path(__file__).resolve().parent / "rave.db"))
-AS_OF = date(2026, 8, 31)
 
 
 @asynccontextmanager
@@ -97,14 +96,11 @@ def money(value: Any) -> float:
         return 0.0
 
 
-def status_for(show: str, start: str | None, end: str | None, sets_count: int, as_of: date = AS_OF) -> str:
+def status_for(show: str, start: str | None, end: str | None) -> str:
     if "(cancelled)" in (show or "").lower():
         return "cancelled"
-    last_s = end or start
-    last = date.fromisoformat(last_s) if last_s else None
-    if sets_count > 0 and last is not None and last <= as_of:
-        return "attended"
-    return "planned"
+    last = end or start
+    return "attended" if last and date.fromisoformat(last) <= date.today() else "planned"
 
 
 def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
@@ -125,7 +121,7 @@ def shape_event(row: sqlite3.Row, sets_count: int) -> dict:
         "total": total,
         "sets_logged": sets_count,
         "dollars_per_set": round(total / sets_count, 2) if sets_count else None,
-        "status": status_for(row["show"], row["start_date"], row["end_date"], sets_count),
+        "status": status_for(row["show"], row["start_date"], row["end_date"]),
         "source": row["source"],
         "source_tab": row["source_tab"],
     }
@@ -431,7 +427,7 @@ def recap() -> dict:
         for y in years
     }
     return {
-        "as_of": AS_OF.isoformat(),
+        "as_of": date.today().isoformat(),
         "all_time": recap_for(shaped_events, shaped_sets),
         "by_year": by_year,
         "counts": {"events": len(shaped_events), "sets": len(shaped_sets)},

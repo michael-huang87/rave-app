@@ -189,15 +189,6 @@ def parse_date_cell(value, year_hint: int) -> tuple[date | None, date | None, st
     return None, None, display
 
 
-def status_for(show: str, start: date | None, end: date | None, sets_count: int, as_of: date) -> str:
-    if "(cancelled)" in show.lower():
-        return "cancelled"
-    last = end or start
-    if sets_count > 0 and last is not None and last <= as_of:
-        return "attended"
-    return "planned"
-
-
 def stringify_show(value) -> str | None:
     if value is None or value == "":
         return None
@@ -478,9 +469,6 @@ def compute_stats(events: list[dict], sets: list[dict], as_of: date) -> dict:
         linked = sum(1 for s in sets if s["event_id"] == e["id"])
         e["sets_logged"] = linked
         e["dollars_per_set"] = round(e["total"] / linked, 2) if linked else None
-        start = date.fromisoformat(e["start_date"]) if e.get("start_date") else None
-        end = date.fromisoformat(e["end_date"]) if e.get("end_date") else start
-        e["status"] = status_for(e["show"], start, end, linked, as_of)
 
     def artist_names(rows):
         names = []
@@ -611,7 +599,7 @@ def main() -> None:
     if not SOURCE.exists():
         raise SystemExit(f"Missing {SOURCE}")
     wb = load_workbook(SOURCE, data_only=True)
-    as_of = date(2026, 8, 31)
+    as_of = date.today()
 
     events, skipped_personal = load_events(wb)
     sets = load_sets(wb)

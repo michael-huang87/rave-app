@@ -84,7 +84,7 @@ def test_create_event_log_set_and_spend(client):
             "show": "Smoke Test Showcase",
             "venue": "Warehouse",
             "city": "Oakland, CA",
-            "start_date": "2026-09-01",
+            "start_date": "2099-01-01",
             "ticket": 40,
         },
     )
@@ -99,10 +99,17 @@ def test_create_event_log_set_and_spend(client):
     assert spend.json()["total"] == 60.5
     logged = client.post(
         f"/events/{eid}/sets",
-        json={"title": "Test Artist b2b Other", "artists": ["Test Artist", "Other"], "date": "2026-09-01"},
+        json={"title": "Test Artist b2b Other", "artists": ["Test Artist", "Other"], "date": "2099-01-01"},
     )
     assert logged.status_code == 201
     assert logged.json()["venue"] == "Warehouse"
     detail = client.get(f"/events/{eid}").json()
     assert detail["sets_logged"] == 1
     assert detail["dollars_per_set"] == 60.5
+
+
+def test_status_is_date_based(client):
+    past = client.post("/events", json={"show": "Past Show", "start_date": "2020-01-01"})
+    assert past.json()["status"] == "attended"
+    off = client.post("/events", json={"show": "Ghost Fest (Cancelled)", "start_date": "2020-01-01"})
+    assert off.json()["status"] == "cancelled"

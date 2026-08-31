@@ -24,8 +24,10 @@ Empty formula-fill rows on Costs2 are ignored. Footer "Total" rows are ignored. 
 Taken from the sheet, not a separate column:
 
 - **Cancelled** — `(Cancelled)` in the show name
-- **Went** — at least one set logged and the event's end date is in the past
-- **Planned** — otherwise (future dates and/or empty set counts). 2026 already has tickets filled in with Sets still blank.
+- **Went** — the event's end date is in the past
+- **Planned** — the end date is in the future
+
+Logged sets do not gate the status. Sets stopped being logged after 2026-06-20, so a past show with no sets is still a show you went to.
 
 ## Spend
 
