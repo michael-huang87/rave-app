@@ -12,7 +12,7 @@ v1 is a **working skeleton** with a real data model imported from the existing G
 | `data/README.md` | How to download the sheet and build a local snapshot |
 | `scripts/clean_sheet.py` | Writes `data/*.json` on your machine |
 | `backend/` | FastAPI + SQLite, seeds from the local snapshot if present |
-| `ios/Rave.xcodeproj` | SwiftUI app: show list, detail, add/edit, log set, log spend, recap |
+| `ios/Rave.xcodeproj` | SwiftUI app: show list, detail, add/edit, log set, log spend, sets, stats, recap |
 
 ## Local snapshot (Mac)
 
@@ -42,7 +42,7 @@ curl -s http://127.0.0.1:8000/sets | head
 curl -s http://127.0.0.1:8000/recap
 ```
 
-Useful routes: `GET /events`, `GET /events/{id}` (includes sets + spend), `POST /events`, `PATCH /events/{id}`, `PATCH /events/{id}/spend`, `POST /events/{id}/sets`, `GET /recap`.
+Useful routes: `GET /events`, `GET /events/{id}` (includes sets + spend), `POST /events`, `PATCH /events/{id}`, `PATCH /events/{id}/spend`, `POST /events/{id}/sets`, `GET /recap`, `GET /stats`.
 
 ```bash
 python3 -m pytest tests/test_api.py -q

@@ -37,4 +37,5 @@ Each feature file uses exactly four H2 sections: `Sub-features`, `How to get to 
 - [Add / edit show](./add-edit-show.md) — create and update event metadata.
 - [Log a set](./log-set.md) — record a DJ set on an event.
 - [Sets list](./sets-list.md) — browse every logged set in the order it was seen.
+- [Stats](./stats.md) — artist / venue / city rankings.
 - [Log spend and recap](./log-spend-recap.md) — update spend buckets and read aggregate stats.

@@ -165,3 +165,26 @@ def test_hand_logged_set_sorts_after_the_sheet_rows_of_its_day(client):
     )
     same_day = [s["title"] for s in client.get(f"/sets?event_id={event['id']}").json() if s["date"] == day[0]["date"]]
     assert same_day[-1] == "AAA Encore", same_day
+
+
+@needs_snapshot
+def test_stats_match_the_sheets_own_analytics(client):
+    """Venue/city counts are distinct set-dates, the way ArtistsVenues computes them."""
+    stats = client.get("/stats").json()
+    venues = {v["name"]: v["count"] for v in stats["venues"]}
+    cities = {c["name"]: c["count"] for c in stats["cities"]}
+
+    # Straight from the sheet's ArtistsVenues tab.
+    assert venues["Bill Graham"] == 37
+    assert venues["Midway"] == 23
+    assert venues["Oakland Arena"] == 9
+    assert cities["San Francisco, CA"] == 74
+    assert cities["Las Vegas, NV"] == 26
+    assert stats["artists"][0] == {"name": "Subtronics", "count": 26}
+
+    for key in ("artists", "venues", "cities"):
+        counts = [x["count"] for x in stats[key]]
+        assert counts == sorted(counts, reverse=True), f"{key} not ranked"
+
+    sets = snapshot(SETS_SNAPSHOT)
+    assert len(cities) == len({s["city"].strip().lower() for s in sets if s.get("city")})

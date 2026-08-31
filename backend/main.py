@@ -423,6 +423,47 @@ def list_sets(event_id: str | None = None) -> list[dict]:
         return [shape_set(r) for r in rows]
 
 
+def rank(pairs: list[tuple[str, object]]) -> list[dict]:
+    """pairs are (display name, thing counted). Groups case-insensitively, keeps first casing."""
+    seen: dict[str, set] = {}
+    display: dict[str, str] = {}
+    for name, item in pairs:
+        key = " ".join((name or "").split()).lower()
+        if not key:
+            continue
+        seen.setdefault(key, set()).add(item)
+        display.setdefault(key, name.strip())
+    counts = [{"name": display[k], "count": len(v)} for k, v in seen.items()]
+    return sorted(counts, key=lambda c: (-c["count"], c["name"].lower()))
+
+
+@app.get("/stats")
+def stats() -> dict:
+    """Artist / venue / city rankings, matching the sheet's ArtistsVenues tab.
+
+    The sheet counts a venue or city by distinct dates in the Sets tab, not by event
+    (COUNTUNIQUEIFS over Sets[Date]), so a two-day festival at one venue is two visits
+    and a venue with no logged sets does not appear at all.
+    """
+    with db() as conn:
+        rows = conn.execute("SELECT venue, city, date, artists_json FROM sets").fetchall()
+
+    artists: list[tuple[str, object]] = []
+    venues: list[tuple[str, object]] = []
+    cities: list[tuple[str, object]] = []
+    for i, r in enumerate(rows):
+        # A set is counted once per artist, so the unit is the row itself, not the date.
+        for a in json.loads(r["artists_json"] or "[]"):
+            if a and a.strip():
+                artists.append((a, i))
+        if r["venue"]:
+            venues.append((r["venue"], r["date"]))
+        if r["city"]:
+            cities.append((r["city"], r["date"]))
+
+    return {"artists": rank(artists), "venues": rank(venues), "cities": rank(cities)}
+
+
 @app.get("/recap")
 def recap() -> dict:
     with db() as conn:

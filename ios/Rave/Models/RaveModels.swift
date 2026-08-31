@@ -79,6 +79,19 @@ struct Recap: Codable {
     var byYear: [String: RecapBucket]
 }
 
+struct StatCount: Codable, Hashable, Identifiable {
+    var name: String
+    var count: Int
+    var id: String { name }
+}
+
+/// Mirrors the sheet's ArtistsVenues tab: artists by sets seen, venues and cities by distinct days.
+struct Stats: Codable {
+    var artists: [StatCount]
+    var venues: [StatCount]
+    var cities: [StatCount]
+}
+
 struct EventDraft: Codable {
     var show: String
     var venue: String?
