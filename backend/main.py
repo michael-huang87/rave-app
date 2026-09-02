@@ -475,6 +475,75 @@ def stats() -> dict:
     return {"artists": rank(artists), "venues": rank(venues), "cities": rank(cities)}
 
 
+def _best_paid_value(evs: list[dict]) -> dict | None:
+    scored: list[tuple] = []
+    for e in evs:
+        n = e.get("sets_logged") or 0
+        total = e.get("total") or 0
+        if n <= 0 or total <= 0:
+            continue
+        dps = e.get("dollars_per_set")
+        if dps is None:
+            dps = round(total / n, 2)
+        scored.append((dps, -n, (e.get("show") or "").casefold(), e["show"]))
+    if not scored:
+        return None
+    dps, _, _, show = min(scored)
+    return {"name": show, "dollars_per_set": dps}
+
+
+def recap_bucket(evs: list[dict], sts: list[dict]) -> dict:
+    names: list[str] = []
+    for s in sts:
+        names.extend(s.get("artists") or [])
+
+    artist_pairs: list[tuple[str, object]] = []
+    city_pairs: list[tuple[str, object]] = []
+    for i, s in enumerate(sts):
+        for a in s.get("artists") or []:
+            if a and a.strip():
+                artist_pairs.append((a, i))
+        if s.get("city"):
+            city_pairs.append((s["city"], s.get("date")))
+    ranked_artists = rank(artist_pairs)
+    ranked_cities = rank(city_pairs)
+
+    most_sets = None
+    if evs:
+        winner = min(
+            evs,
+            key=lambda e: (-(e.get("sets_logged") or 0), (e.get("show") or "").casefold()),
+        )
+        n = winner.get("sets_logged") or 0
+        if n:
+            most_sets = {"name": winner["show"], "count": n}
+
+    best_dollars_per_set = _best_paid_value(evs)
+
+    ticket = round(sum(e["ticket"] for e in evs), 2)
+    travel = round(sum(e["travel"] for e in evs), 2)
+    drinks_food_merch = round(sum(e["drinks_food_merch"] for e in evs), 2)
+    return {
+        "sets": len(sts),
+        "artists": len({n.strip().lower() for n in names if n.strip()}),
+        "set_titles": len({s["title"] for s in sts if s.get("title")}),
+        "shows": len({s["show"] for s in sts if s.get("show")}),
+        "events": len(evs),
+        "venues": len({e["venue"] for e in evs if e.get("venue")}),
+        "cities": len({e["city"] for e in evs if e.get("city")}),
+        "spend": round(sum(e["total"] for e in evs), 2),
+        "spend_by_type": {
+            "ticket": ticket,
+            "travel": travel,
+            "drinks_food_merch": drinks_food_merch,
+        },
+        "top_artist": ranked_artists[0] if ranked_artists else None,
+        "top_city": ranked_cities[0] if ranked_cities else None,
+        "most_sets": most_sets,
+        "best_dollars_per_set": best_dollars_per_set,
+    }
+
+
 @app.get("/recap")
 def recap() -> dict:
     with db() as conn:
@@ -487,24 +556,9 @@ def recap() -> dict:
         counts[s["event_id"]] = counts.get(s["event_id"], 0) + 1
     shaped_events = [shape_event(e, counts.get(e["id"], 0)) for e in events]
 
-    def recap_for(evs, sts):
-        names: list[str] = []
-        for s in sts:
-            names.extend(s.get("artists") or [])
-        return {
-            "sets": len(sts),
-            "artists": len({n.strip().lower() for n in names if n.strip()}),
-            "set_titles": len({s["title"] for s in sts if s.get("title")}),
-            "shows": len({s["show"] for s in sts if s.get("show")}),
-            "events": len(evs),
-            "venues": len({e["venue"] for e in evs if e.get("venue")}),
-            "cities": len({e["city"] for e in evs if e.get("city")}),
-            "spend": round(sum(e["total"] for e in evs), 2),
-        }
-
     years = sorted({e.get("year") for e in shaped_events if e.get("year")})
     by_year = {
-        str(y): recap_for(
+        str(y): recap_bucket(
             [e for e in shaped_events if e.get("year") == y],
             [s for s in shaped_sets if s.get("year") == y],
         )
@@ -512,7 +566,7 @@ def recap() -> dict:
     }
     return {
         "as_of": date.today().isoformat(),
-        "all_time": recap_for(shaped_events, shaped_sets),
+        "all_time": recap_bucket(shaped_events, shaped_sets),
         "by_year": by_year,
         "counts": {"events": len(shaped_events), "sets": len(shaped_sets)},
     }

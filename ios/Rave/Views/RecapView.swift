@@ -46,6 +46,21 @@ struct RecapView: View {
         LabeledContent("Shows", value: "\(b.shows)")
         LabeledContent("Events", value: "\(b.events)")
         LabeledContent("Spend", value: b.spend.usd)
+        LabeledContent("Ticket", value: b.spendByType.ticket.usd)
+        LabeledContent("Travel", value: b.spendByType.travel.usd)
+        LabeledContent("Drinks / Food / Merch", value: b.spendByType.drinksFoodMerch.usd)
+        if let top = b.topArtist {
+            LabeledContent("Top artist", value: "\(top.name) (\(top.count))")
+        }
+        if let city = b.topCity {
+            LabeledContent("Top city", value: "\(city.name) (\(city.count))")
+        }
+        if let most = b.mostSets {
+            LabeledContent("Most sets", value: "\(most.name) (\(most.count))")
+        }
+        if let best = b.bestDollarsPerSet {
+            LabeledContent("Best $/set", value: "\(best.name) (\(best.dollarsPerSet.usd))")
+        }
     }
 
     @MainActor
