@@ -70,19 +70,19 @@ struct SetEntry: Identifiable, Codable, Hashable {
     var artists: [String]
 }
 
-struct RecapBucket: Codable {
-    struct SpendByType: Codable {
+struct RecapBucket: Codable, Hashable {
+    struct SpendByType: Codable, Hashable {
         var ticket: Double
         var travel: Double
         var drinksFoodMerch: Double
     }
 
-    struct NamedCount: Codable {
+    struct NamedCount: Codable, Hashable {
         var name: String
         var count: Int
     }
 
-    struct DollarsPerSet: Codable {
+    struct DollarsPerSet: Codable, Hashable {
         var name: String
         var dollarsPerSet: Double
     }
