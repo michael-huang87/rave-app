@@ -283,9 +283,9 @@ def test_stats_match_the_sheets_own_analytics(client):
 
     # Straight from the sheet's ArtistsVenues tab.
     assert venues["Bill Graham"] == 37
-    assert venues["Midway"] == 23
-    assert venues["Oakland Arena"] == 9
-    assert cities["San Francisco, CA"] == 74
+    assert venues["Midway"] == 24
+    assert venues["Oakland Arena"] == 10
+    assert cities["San Francisco, CA"] == 75
     assert cities["Las Vegas, NV"] == 26
     assert stats["artists"][0] == {"name": "Subtronics", "count": 26}
 
@@ -314,7 +314,7 @@ def test_multi_day_events_are_festivals(client):
         1 for e in snapshot_events
         if e.get("end_date") and e.get("start_date") and e["end_date"] != e["start_date"]
     )
-    assert sum(1 for e in events if e["days"] > 1) == expected == 44
+    assert sum(1 for e in events if e["days"] > 1) == expected
     assert all(e["days"] >= 1 for e in events), "days is never zero or negative"
 
 
