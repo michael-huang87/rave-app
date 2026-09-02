@@ -123,13 +123,9 @@ struct EventDetailView: View {
                             .padding(.top, index == 0 ? 0 : 8)
                     }
                     ForEach(night.values) { set in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(set.title).font(.body.weight(.medium))
-                            Text(set.artists.joined(separator: ", "))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
+                        Text(set.title)
+                            .font(.body.weight(.medium))
+                            .padding(.vertical, 4)
                     }
                 }
             } else {
