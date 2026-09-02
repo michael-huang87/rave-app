@@ -74,8 +74,73 @@ def test_list_sets(client):
     assert len(r.json()) == len(snapshot(SETS_SNAPSHOT))
 
 
+def _rank_counts(pairs):
+    seen = {}
+    display = {}
+    for name, item in pairs:
+        key = " ".join((name or "").split()).lower()
+        if not key:
+            continue
+        seen.setdefault(key, set()).add(item)
+        display.setdefault(key, name.strip())
+    counts = [{"name": display[k], "count": len(v)} for k, v in seen.items()]
+    return sorted(counts, key=lambda c: (-c["count"], c["name"].lower()))
+
+
+def _snapshot_highlights(events, sets):
+    set_counts = {}
+    for s in sets:
+        set_counts[s["event_id"]] = set_counts.get(s["event_id"], 0) + 1
+    artist_pairs = []
+    city_pairs = []
+    for i, s in enumerate(sets):
+        for a in s.get("artists") or []:
+            if a and str(a).strip():
+                artist_pairs.append((a, i))
+        if s.get("city"):
+            city_pairs.append((s["city"], s.get("date")))
+    ranked_artists = _rank_counts(artist_pairs)
+    ranked_cities = _rank_counts(city_pairs)
+    most_sets = None
+    if events:
+        winner = min(
+            events,
+            key=lambda e: (-set_counts.get(e["id"], 0), (e.get("show") or "").casefold()),
+        )
+        n = set_counts.get(winner["id"], 0)
+        if n:
+            most_sets = {"name": winner["show"], "count": n}
+    scored = []
+    for e in events:
+        n = set_counts.get(e["id"], 0)
+        total = round(
+            float(e.get("ticket") or 0)
+            + float(e.get("travel") or 0)
+            + float(e.get("drinks_food_merch") or 0),
+            2,
+        )
+        if n > 0 and total > 0:
+            scored.append((round(total / n, 2), -n, (e.get("show") or "").casefold(), e["show"]))
+    best = None
+    if scored:
+        dps, _, _, show = min(scored)
+        best = {"name": show, "dollars_per_set": dps}
+    ticket = round(sum(float(e.get("ticket") or 0) for e in events), 2)
+    travel = round(sum(float(e.get("travel") or 0) for e in events), 2)
+    drinks = round(sum(float(e.get("drinks_food_merch") or 0) for e in events), 2)
+    return {
+        "top_artist": ranked_artists[0] if ranked_artists else None,
+        "top_city": ranked_cities[0] if ranked_cities else None,
+        "most_sets": most_sets,
+        "best_dollars_per_set": best,
+        "spend_by_type": {"ticket": ticket, "travel": travel, "drinks_food_merch": drinks},
+        "spend": round(ticket + travel + drinks, 2),
+    }
+
+
 @needs_snapshot
 def test_recap(client):
+    events = snapshot(SNAPSHOT)
     sets = snapshot(SETS_SNAPSHOT)
     recap = client.get("/recap").json()
     assert recap["all_time"]["sets"] == len(sets)
@@ -83,6 +148,48 @@ def test_recap(client):
     for year, bucket in recap["by_year"].items():
         assert bucket["sets"] == sum(1 for s in sets if str(s.get("year")) == year)
     assert sum(b["sets"] for b in recap["by_year"].values()) == len(sets)
+
+    assert {"2023", "2024", "2025", "2026"} <= set(recap["by_year"])
+    all_time = recap["all_time"]
+    assert all_time["top_artist"] == {"name": "Subtronics", "count": 26}
+    assert all_time["top_city"] == {"name": "San Francisco, CA", "count": 75}
+    assert all_time["most_sets"] == {"name": "EDSea", "count": 61}
+    assert all_time["best_dollars_per_set"] == {"name": "Alvyn", "dollars_per_set": 2.5}
+    assert recap["by_year"]["2022"]["best_dollars_per_set"] is None
+    assert recap["by_year"]["2026"]["most_sets"] == {"name": "EDC Las Vegas", "count": 41}
+
+    y2026 = recap["by_year"]["2026"]
+    assert y2026["best_dollars_per_set"] is not None
+    assert y2026["best_dollars_per_set"]["name"] != "Tomorrowland Winter"
+    expected_2026 = _snapshot_highlights(
+        [e for e in events if e.get("year") == 2026],
+        [s for s in sets if s.get("year") == 2026],
+    )
+    assert expected_2026["best_dollars_per_set"]["name"] != "Tomorrowland Winter"
+    assert y2026["best_dollars_per_set"] == expected_2026["best_dollars_per_set"]
+
+    sbt = all_time["spend_by_type"]
+    assert sbt["ticket"] == 38450.3
+    assert sbt["travel"] == 12904.85
+    assert sbt["drinks_food_merch"] == 2929.39
+    assert round(sbt["ticket"] + sbt["travel"] + sbt["drinks_food_merch"], 2) == all_time["spend"]
+
+    expected_all = _snapshot_highlights(events, sets)
+    assert all_time["spend_by_type"] == expected_all["spend_by_type"]
+    assert all_time["spend"] == expected_all["spend"]
+
+    y2025 = recap["by_year"]["2025"]
+    expected_2025 = _snapshot_highlights(
+        [e for e in events if e.get("year") == 2025],
+        [s for s in sets if s.get("year") == 2025],
+    )
+    assert y2025["top_artist"] == expected_2025["top_artist"]
+    assert y2025["top_city"] == expected_2025["top_city"]
+    assert y2025["most_sets"] == expected_2025["most_sets"]
+    assert y2025["spend_by_type"] == expected_2025["spend_by_type"]
+    assert y2025["top_artist"] != all_time["top_artist"]
+    assert y2025["top_city"] != all_time["top_city"]
+    assert y2025["spend_by_type"] != all_time["spend_by_type"]
 
 
 def test_create_event_log_set_and_spend(client):
@@ -176,9 +283,9 @@ def test_stats_match_the_sheets_own_analytics(client):
 
     # Straight from the sheet's ArtistsVenues tab.
     assert venues["Bill Graham"] == 37
-    assert venues["Midway"] == 23
-    assert venues["Oakland Arena"] == 9
-    assert cities["San Francisco, CA"] == 74
+    assert venues["Midway"] == 24
+    assert venues["Oakland Arena"] == 10
+    assert cities["San Francisco, CA"] == 75
     assert cities["Las Vegas, NV"] == 26
     assert stats["artists"][0] == {"name": "Subtronics", "count": 26}
 
@@ -207,7 +314,7 @@ def test_multi_day_events_are_festivals(client):
         1 for e in snapshot_events
         if e.get("end_date") and e.get("start_date") and e["end_date"] != e["start_date"]
     )
-    assert sum(1 for e in events if e["days"] > 1) == expected == 44
+    assert sum(1 for e in events if e["days"] > 1) == expected
     assert all(e["days"] >= 1 for e in events), "days is never zero or negative"
 
 

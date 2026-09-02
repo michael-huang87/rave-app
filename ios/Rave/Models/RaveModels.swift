@@ -71,6 +71,22 @@ struct SetEntry: Identifiable, Codable, Hashable {
 }
 
 struct RecapBucket: Codable {
+    struct SpendByType: Codable {
+        var ticket: Double
+        var travel: Double
+        var drinksFoodMerch: Double
+    }
+
+    struct NamedCount: Codable {
+        var name: String
+        var count: Int
+    }
+
+    struct DollarsPerSet: Codable {
+        var name: String
+        var dollarsPerSet: Double
+    }
+
     var sets: Int
     var artists: Int
     var setTitles: Int?
@@ -79,6 +95,11 @@ struct RecapBucket: Codable {
     var venues: Int
     var cities: Int
     var spend: Double
+    var spendByType: SpendByType
+    var topArtist: NamedCount?
+    var topCity: NamedCount?
+    var mostSets: NamedCount?
+    var bestDollarsPerSet: DollarsPerSet?
 }
 
 struct Recap: Codable {
