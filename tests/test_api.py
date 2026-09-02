@@ -321,3 +321,35 @@ def test_multi_day_events_are_festivals(client):
 def test_days_defaults_to_one_for_a_hand_added_event(client):
     created = client.post("/events", json={"show": "One Nighter", "start_date": "2026-09-05"}).json()
     assert created["days"] == 1
+
+
+@needs_snapshot
+def test_event_log_runs_in_set_order_within_each_night(client):
+    """The sheet lists a night newest-first, so the event log has to read back the other way."""
+    by_id = {s["id"]: s.get("sheet_row") for s in snapshot(SETS_SNAPSHOT)}
+    for event in client.get("/events").json():
+        sets = client.get(f"/events/{event['id']}").json()["sets"]
+        dates = [s["date"] for s in sets]
+        if len(set(dates)) > 1:
+            break
+    else:
+        pytest.skip("snapshot has no multi-day event")
+
+    assert dates == sorted(dates), "nights should run earliest-first"
+    for day in sorted(set(dates)):
+        rows = [by_id[s["id"]] for s in sets if s["date"] == day]
+        assert rows == sorted(rows, reverse=True), f"{day} is still in sheet order"
+
+
+@needs_snapshot
+def test_hand_logged_set_closes_its_night_in_the_event_log(client):
+    """A set logged in the app has no sheet_row; it is the latest thing seen, so it goes last."""
+    event = next(e for e in client.get("/events").json() if e["sets_logged"])
+    day = client.get(f"/events/{event['id']}").json()["sets"][0]["date"]
+
+    client.post(
+        f"/events/{event['id']}/sets",
+        json={"title": "AAA Encore", "artists": ["AAA Encore"], "date": day},
+    )
+    night = [s["title"] for s in client.get(f"/events/{event['id']}").json()["sets"] if s["date"] == day]
+    assert night[-1] == "AAA Encore", night
