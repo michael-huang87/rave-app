@@ -319,7 +319,10 @@ def get_event(event_id: str) -> dict:
         sets = [
             shape_set(r)
             for r in conn.execute(
-                f"SELECT * FROM sets WHERE event_id = ? ORDER BY date, {SET_ORDER}", (event_id,)
+                # The sheet lists a night newest-first, so read it back reversed. A hand-logged set
+                # has no sheet_row and closes the night, which is why it coalesces low, not high.
+                "SELECT * FROM sets WHERE event_id = ? ORDER BY date, COALESCE(sheet_row, 0) DESC, rowid",
+                (event_id,),
             )
         ]
         event["sets"] = sets
