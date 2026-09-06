@@ -7,12 +7,15 @@ struct EventDetailView: View {
     @State private var showSpend = false
     @State private var showSet = false
     @State private var showEdit = false
+    @State private var fromCache = false
+    @State private var cachedAt: Date?
 
     var body: some View {
         Group {
             if let event {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        if fromCache { OfflineBanner(cachedAt: cachedAt) }
                         header(event)
                         spendCard(event)
                         setsCard(event)
@@ -44,6 +47,9 @@ struct EventDetailView: View {
             if let event { EventFormView(existing: event) { await reload() } }
         }
         .task { await reload() }
+        .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+            Task { await reload() }
+        }
     }
 
     private func header(_ event: Event) -> some View {
@@ -135,7 +141,14 @@ struct EventDetailView: View {
 
     @MainActor
     private func reload() async {
-        do { event = try await APIClient.shared.event(id: eventId) }
-        catch { self.error = error.localizedDescription }
+        do {
+            let read = try await APIClient.shared.event(id: eventId)
+            event = read.value
+            fromCache = read.fromCache
+            cachedAt = read.cachedAt
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }

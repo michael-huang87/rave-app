@@ -75,7 +75,10 @@ category that regresses is visible.
 1. Build the local snapshot and start the backend.
 2. Open `ios/Rave.xcodeproj` in Xcode (iOS 17+).
 3. Simulator talks to `http://127.0.0.1:8000`. On a device, set `APIBaseURL` in `ios/Rave/Info.plist` to your Mac's API URL (see below).
-4. Do not submit to App Store Connect.
+4. After a successful load, the app writes last-read JSON under Application Support `Rave/LastRead/` (events list, event detail, sets, recap, stats). Offline or unreachable backend shows that cache with an "Offline — last loaded data" banner. Edits are refused until there is a signal — there is no write queue. Pull to refresh or wait for the path to come back; both refetch and update the cache.
+5. Do not submit to App Store Connect.
+
+This Linux VM cannot simulator-run iOS. Cache file layout is covered by `tests/test_last_read_cache.py`. On a Mac: load online, enable airplane mode, reopen Shows / a show / Recap / Stats.
 
 ### Physical device — home Wi‑Fi only
 
