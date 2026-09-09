@@ -6,6 +6,8 @@ struct EventListView: View {
     @State private var error: String?
     @State private var loading = true
     @State private var showAdd = false
+    @State private var fromCache = false
+    @State private var cachedAt: Date?
 
     var body: some View {
         NavigationStack {
@@ -35,8 +37,14 @@ struct EventListView: View {
             .sheet(isPresented: $showAdd) {
                 EventFormView { await reload() }
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if fromCache { OfflineBanner(cachedAt: cachedAt) }
+            }
             .task { await reload() }
             .refreshable { await reload() }
+            .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+                Task { await reload() }
+            }
         }
     }
 
@@ -117,7 +125,11 @@ struct EventListView: View {
         loading = events.isEmpty
         error = nil
         do {
-            events = try await APIClient.shared.events()
+            let read = try await APIClient.shared.events()
+            events = read.value
+            fromCache = read.fromCache
+            cachedAt = read.cachedAt
+            error = nil
             loading = false
         } catch {
             self.error = error.localizedDescription

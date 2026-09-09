@@ -3,6 +3,8 @@ import SwiftUI
 struct RecapView: View {
     @State private var recap: Recap?
     @State private var error: String?
+    @State private var fromCache = false
+    @State private var cachedAt: Date?
 
     var body: some View {
         NavigationStack {
@@ -34,8 +36,14 @@ struct RecapView: View {
             }
             .background(RaveTheme.bg)
             .navigationTitle("Recap")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if fromCache { OfflineBanner(cachedAt: cachedAt) }
+            }
             .task { await load() }
             .refreshable { await load() }
+            .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+                Task { await load() }
+            }
         }
     }
 
@@ -65,7 +73,14 @@ struct RecapView: View {
 
     @MainActor
     private func load() async {
-        do { recap = try await APIClient.shared.recap() }
-        catch { self.error = error.localizedDescription }
+        do {
+            let read = try await APIClient.shared.recap()
+            recap = read.value
+            fromCache = read.fromCache
+            cachedAt = read.cachedAt
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
