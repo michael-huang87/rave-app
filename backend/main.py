@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from contextlib import asynccontextmanager, contextmanager
 from datetime import date
@@ -183,6 +184,12 @@ def shape_set(row: sqlite3.Row) -> dict:
     }
 
 
+def split_artists(title: str) -> list[str]:
+    """The sheet writes a back-to-back as one line, so " b2b " is the only artist boundary there is."""
+    names = [n.strip() for n in re.split(r"\s+b2b\s+", title, flags=re.IGNORECASE) if n.strip()]
+    return names or [title.strip()]
+
+
 def new_id(*parts: object) -> str:
     import hashlib
 
@@ -279,6 +286,17 @@ class SetIn(BaseModel):
     artists: list[str] = []
     date: str | None = None
     year: int | None = None
+
+
+class BulkSetsIn(BaseModel):
+    artists: list[str] = []
+    date: str | None = None
+
+
+class SetPatch(BaseModel):
+    title: str | None = None
+    artists: list[str] | None = None
+    date: str | None = None
 
 
 def event_with_count(conn: sqlite3.Connection, event_id: str) -> dict:
@@ -396,33 +414,83 @@ def log_spend(event_id: str, body: SpendIn) -> dict:
         return event_with_count(conn, event_id)
 
 
+def insert_set(
+    conn: sqlite3.Connection,
+    event: sqlite3.Row,
+    title: str,
+    artists: list[str],
+    date: str | None,
+    year: int | None,
+) -> sqlite3.Row:
+    """Seeing the same act twice in a night is legitimate, so a taken id gets a discriminator
+    rather than an IntegrityError. The first hash keeps its old inputs so seeded ids do not move."""
+    parts: list[object] = ["set", event["id"], title, date, len(artists)]
+    sid = new_id(*parts)
+    n = 1
+    while conn.execute("SELECT 1 FROM sets WHERE id = ?", (sid,)).fetchone():
+        sid = new_id(*parts, n)
+        n += 1
+    conn.execute(
+        """INSERT INTO sets
+           (id, event_id, title, show, venue, city, year, date, artists_json)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (
+            sid,
+            event["id"],
+            title.strip(),
+            event["show"],
+            event["venue"],
+            event["city"],
+            year or event["year"],
+            date or event["start_date"],
+            json.dumps(artists),
+        ),
+    )
+    return conn.execute("SELECT * FROM sets WHERE id = ?", (sid,)).fetchone()
+
+
 @app.post("/events/{event_id}/sets", status_code=201)
 def log_set(event_id: str, body: SetIn) -> dict:
     with db() as conn:
         event = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         if not event:
             raise HTTPException(404, "event not found")
-        artists = body.artists or [body.title]
-        artists = [a.strip() for a in artists if a and a.strip()]
-        sid = new_id("set", event_id, body.title, body.date, len(artists))
-        conn.execute(
-            """INSERT INTO sets
-               (id, event_id, title, show, venue, city, year, date, artists_json)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (
-                sid,
-                event_id,
-                body.title.strip(),
-                event["show"],
-                event["venue"],
-                event["city"],
-                body.year or event["year"],
-                body.date or event["start_date"],
-                json.dumps(artists),
-            ),
-        )
-        row = conn.execute("SELECT * FROM sets WHERE id = ?", (sid,)).fetchone()
-        return shape_set(row)
+        artists = [a.strip() for a in body.artists if a and a.strip()] or split_artists(body.title)
+        return shape_set(insert_set(conn, event, body.title, artists, body.date, body.year))
+
+
+@app.post("/events/{event_id}/sets/bulk", status_code=201)
+def log_sets_bulk(event_id: str, body: BulkSetsIn) -> dict:
+    """One typed line is one set. The pasted order is the night's only time signal, so it is
+    walked in order, and a re-paste of the same list skips instead of duplicating."""
+    with db() as conn:
+        event = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        if not event:
+            raise HTTPException(404, "event not found")
+        set_date = body.date or event["start_date"]
+        seen = {
+            " ".join(r["title"].split()).casefold()
+            for r in conn.execute(
+                # IS, not =, because an event with no start_date dates its sets NULL,
+                # and = never matches NULL, which would re-add the whole list on every paste.
+                "SELECT title FROM sets WHERE event_id = ? AND date IS ?", (event_id, set_date)
+            )
+        }
+        created: list[dict] = []
+        skipped: list[str] = []
+        for entry in body.artists:
+            title = entry.strip()
+            if not title:
+                continue
+            key = " ".join(title.split()).casefold()
+            if key in seen:
+                skipped.append(entry)
+                continue
+            seen.add(key)
+            created.append(
+                shape_set(insert_set(conn, event, title, split_artists(title), set_date, None))
+            )
+        return {"created": created, "skipped": skipped}
 
 
 @app.get("/sets")
@@ -435,6 +503,35 @@ def list_sets(event_id: str | None = None) -> list[dict]:
         else:
             rows = conn.execute(f"SELECT * FROM sets ORDER BY date DESC, {SET_ORDER}").fetchall()
         return [shape_set(r) for r in rows]
+
+
+@app.patch("/sets/{set_id}")
+def patch_set(set_id: str, body: SetPatch) -> dict:
+    data = body.model_dump(exclude_unset=True)
+    fields = []
+    values: list[Any] = []
+    for key, val in data.items():
+        if key == "artists":
+            fields.append("artists_json = ?")
+            values.append(json.dumps(val or []))
+            continue
+        fields.append(f"{key} = ?")
+        values.append(val.strip() if isinstance(val, str) else val)
+    with db() as conn:
+        row = conn.execute("SELECT * FROM sets WHERE id = ?", (set_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "set not found")
+        if fields:
+            conn.execute(f"UPDATE sets SET {', '.join(fields)} WHERE id = ?", values + [set_id])
+            row = conn.execute("SELECT * FROM sets WHERE id = ?", (set_id,)).fetchone()
+        return shape_set(row)
+
+
+@app.delete("/sets/{set_id}", status_code=204)
+def delete_set(set_id: str) -> None:
+    with db() as conn:
+        if conn.execute("DELETE FROM sets WHERE id = ?", (set_id,)).rowcount == 0:
+            raise HTTPException(404, "set not found")
 
 
 def rank(pairs: list[tuple[str, object]]) -> list[dict]:

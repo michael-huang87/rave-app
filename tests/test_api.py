@@ -353,3 +353,84 @@ def test_hand_logged_set_closes_its_night_in_the_event_log(client):
     )
     night = [s["title"] for s in client.get(f"/events/{event['id']}").json()["sets"] if s["date"] == day]
     assert night[-1] == "AAA Encore", night
+
+
+def test_bulk_add_creates_one_set_per_artist_in_order(client):
+    eid = client.post(
+        "/events", json={"show": "Bulk Night", "venue": "The Midway", "start_date": "2026-03-01"}
+    ).json()["id"]
+    posted = ["Zeds Dead", "Alison Wonderland", "Barely Alive"]
+
+    r = client.post(f"/events/{eid}/sets/bulk", json={"artists": posted + ["   "]})
+    assert r.status_code == 201
+    assert [s["title"] for s in r.json()["created"]] == posted
+    assert r.json()["skipped"] == [], "a blank line is dropped, not reported"
+    assert r.json()["created"][0]["venue"] == "The Midway"
+
+    detail = client.get(f"/events/{eid}").json()
+    assert detail["sets_logged"] == 3
+    assert [s["title"] for s in detail["sets"]] == posted, "the pasted order is the order of the night"
+
+
+def test_bulk_add_splits_b2b_into_artists(client):
+    eid = client.post("/events", json={"show": "B2B Night", "start_date": "2026-03-02"}).json()["id"]
+
+    created = client.post(
+        f"/events/{eid}/sets/bulk", json={"artists": ["Excision b2b SLANDER"]}
+    ).json()["created"]
+    assert len(created) == 1, "a back-to-back is one set, not two"
+    assert created[0]["title"] == "Excision b2b SLANDER"
+    assert created[0]["artists"] == ["Excision", "SLANDER"]
+
+
+def test_bulk_add_is_idempotent(client):
+    eid = client.post("/events", json={"show": "Repaste Night", "start_date": "2026-03-03"}).json()["id"]
+    posted = ["Excision", "SVDDEN DEATH"]
+    assert len(client.post(f"/events/{eid}/sets/bulk", json={"artists": posted}).json()["created"]) == 2
+
+    repasted = ["  excision  ", "SVDDEN DEATH", "Peekaboo"]
+    again = client.post(f"/events/{eid}/sets/bulk", json={"artists": repasted}).json()
+    assert [s["title"] for s in again["created"]] == ["Peekaboo"]
+    assert again["skipped"] == repasted[:2], "case and spacing are not a different artist"
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 3, "only the new name landed"
+
+
+def test_patch_and_delete_a_set(client):
+    eid = client.post("/events", json={"show": "Edit Night", "start_date": "2026-03-04"}).json()["id"]
+    sid = client.post(f"/events/{eid}/sets", json={"title": "Wrong Name"}).json()["id"]
+
+    renamed = client.patch(
+        f"/sets/{sid}", json={"title": "Right Name b2b Guest", "artists": ["Right Name", "Guest"]}
+    )
+    assert renamed.status_code == 200
+    assert client.get(f"/events/{eid}").json()["sets"] == [renamed.json()]
+
+    moved = client.patch(f"/sets/{sid}", json={"date": "2026-03-05"}).json()
+    assert moved["date"] == "2026-03-05"
+    assert moved["artists"] == ["Right Name", "Guest"], "a date edit never re-derives artists"
+    assert client.patch(f"/sets/{sid}", json={"artists": None}).json()["artists"] == []
+
+    assert client.delete(f"/sets/{sid}").status_code == 204
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 0
+
+
+def test_logging_the_same_set_twice_gets_distinct_ids(client):
+    eid = client.post("/events", json={"show": "Encore Night", "start_date": "2026-03-06"}).json()["id"]
+    body = {"title": "Subtronics", "artists": ["Subtronics"], "date": "2026-03-06"}
+
+    first = client.post(f"/events/{eid}/sets", json=body)
+    second = client.post(f"/events/{eid}/sets", json=body)
+    assert (first.status_code, second.status_code) == (201, 201)
+    assert first.json()["id"] != second.json()["id"], "a repeated title used to collide on the id hash"
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 2
+
+
+def test_bulk_add_is_idempotent_on_an_undated_event(client):
+    eid = client.post("/events", json={"show": "Undated Night"}).json()["id"]
+    posted = ["Subtronics", "Alvyn"]
+    assert len(client.post(f"/events/{eid}/sets/bulk", json={"artists": posted}).json()["created"]) == 2
+
+    again = client.post(f"/events/{eid}/sets/bulk", json={"artists": posted}).json()
+    assert again["created"] == [], "SQL = never matches NULL, so an undated night used to re-add the list"
+    assert again["skipped"] == posted
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 2
