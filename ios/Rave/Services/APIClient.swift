@@ -5,6 +5,7 @@ enum APIError: LocalizedError {
     case http(Int)
     case decode
     case transport(String)
+    case needsSignal
 
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,8 @@ enum APIError: LocalizedError {
         case .http(let code): return "Server returned \(code)"
         case .decode: return "Could not read the server response"
         case .transport(let message): return message
+        case .needsSignal:
+            return "Edits need a signal. You can still read last-loaded shows, but changes are not saved offline."
         }
     }
 }
@@ -28,16 +31,20 @@ actor APIClient {
 
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
-        config.waitsForConnectivity = true
-        config.timeoutIntervalForRequest = 30
+        // Fail fast so we can show last-read cache instead of hanging offline.
+        config.waitsForConnectivity = false
+        config.timeoutIntervalForRequest = 15
         config.allowsCellularAccess = true
         config.allowsExpensiveNetworkAccess = true
         config.allowsConstrainedNetworkAccess = true
         return URLSession(configuration: config)
     }()
 
-    private init() {
+    private let store: LastReadStore
+
+    private init(store: LastReadStore = LastReadStore()) {
         baseURL = Self.resolveBaseURL()
+        self.store = store
     }
 
     private static func resolveBaseURL() -> URL {
@@ -64,31 +71,33 @@ actor APIClient {
         return e
     }()
 
-    func events(status: EventStatus? = nil, year: Int? = nil) async throws -> [Event] {
+    func events(status: EventStatus? = nil, year: Int? = nil) async throws -> ReadResult<[Event]> {
         var items: [URLQueryItem] = []
         if let status { items.append(.init(name: "status", value: status.rawValue)) }
         if let year { items.append(.init(name: "year", value: String(year))) }
-        return try await get("/events", query: items)
+        return try await cachedGet("/events", query: items, key: .events)
     }
 
-    func event(id: String) async throws -> Event {
-        try await get("/events/\(id)")
+    func event(id: String) async throws -> ReadResult<Event> {
+        try await cachedGet("/events/\(id)", key: .event(id))
     }
 
-    func sets() async throws -> [SetEntry] {
-        try await get("/sets")
+    func sets() async throws -> ReadResult<[SetEntry]> {
+        try await cachedGet("/sets", key: .sets)
     }
 
-    func recap() async throws -> Recap {
-        try await get("/recap")
+    func recap() async throws -> ReadResult<Recap> {
+        try await cachedGet("/recap", key: .recap)
     }
 
-    func stats() async throws -> Stats {
-        try await get("/stats")
+    func stats() async throws -> ReadResult<Stats> {
+        try await cachedGet("/stats", key: .stats)
     }
 
     func createEvent(_ draft: EventDraft) async throws -> Event {
-        try await send("/events", method: "POST", body: draft)
+        let event: Event = try await send("/events", method: "POST", body: draft)
+        store.save(event, key: .event(event.id))
+        return event
     }
 
     func updateEvent(id: String, show: String, venue: String?, city: String?, startDate: String?, endDate: String?) async throws -> Event {
@@ -99,11 +108,15 @@ actor APIClient {
             var startDate: String?
             var endDate: String?
         }
-        return try await send("/events/\(id)", method: "PATCH", body: Patch(show: show, venue: venue, city: city, startDate: startDate, endDate: endDate))
+        let event: Event = try await send("/events/\(id)", method: "PATCH", body: Patch(show: show, venue: venue, city: city, startDate: startDate, endDate: endDate))
+        store.save(event, key: .event(event.id))
+        return event
     }
 
     func logSpend(eventId: String, spend: SpendDraft) async throws -> Event {
-        try await send("/events/\(eventId)/spend", method: "PATCH", body: spend)
+        let event: Event = try await send("/events/\(eventId)/spend", method: "PATCH", body: spend)
+        store.save(event, key: .event(event.id))
+        return event
     }
 
     func logSet(eventId: String, draft: SetDraft) async throws -> SetEntry {
@@ -138,6 +151,19 @@ actor APIClient {
         return url
     }
 
+    private func cachedGet<T: Codable>(_ path: String, query: [URLQueryItem] = [], key: LastReadKey) async throws -> ReadResult<T> {
+        do {
+            let live: T = try await get(path, query: query)
+            store.save(live, key: key)
+            return ReadResult(value: live, fromCache: false, cachedAt: nil)
+        } catch {
+            if let hit = store.load(T.self, key: key) {
+                return ReadResult(value: hit.payload, fromCache: true, cachedAt: hit.savedAt)
+            }
+            throw error
+        }
+    }
+
     private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
         let url = try makeURL(path, query: query)
         let data: Data
@@ -162,6 +188,7 @@ actor APIClient {
         do {
             (data, response) = try await session.data(for: req)
         } catch {
+            if Self.isOffline(error) { throw APIError.needsSignal }
             throw APIError.transport(Self.describe(error))
         }
         try Self.check(response)
@@ -176,9 +203,20 @@ actor APIClient {
         do {
             (_, response) = try await session.data(for: req)
         } catch {
+            if Self.isOffline(error) { throw APIError.needsSignal }
             throw APIError.transport(Self.describe(error))
         }
         try Self.check(response)
+    }
+
+    private static func isOffline(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .notConnectedToInternet, .timedOut, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed, .cannotFindHost:
+            return true
+        default:
+            return false
+        }
     }
 
     private static func describe(_ error: Error) -> String {

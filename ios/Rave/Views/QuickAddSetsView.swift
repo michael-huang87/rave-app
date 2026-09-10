@@ -71,7 +71,9 @@ struct QuickAddSetsView: View {
                 night = event.nights.contains(today) ? today : (event.nights.first ?? "")
                 typing = true
             }
-            .task { known = (try? await APIClient.shared.stats())?.artists.map(\.name) ?? [] }
+            // The last-read cache is welcome here: suggesting names from the last good load beats
+            // suggesting nothing when the field is the whole point of the screen.
+            .task { known = (try? await APIClient.shared.stats())?.value.artists.map(\.name) ?? [] }
         }
     }
 

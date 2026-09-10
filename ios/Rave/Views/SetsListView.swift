@@ -5,6 +5,8 @@ struct SetsListView: View {
     @State private var query = ""
     @State private var error: String?
     @State private var loading = true
+    @State private var fromCache = false
+    @State private var cachedAt: Date?
 
     var body: some View {
         NavigationStack {
@@ -27,8 +29,14 @@ struct SetsListView: View {
             .background(RaveTheme.bg)
             .navigationTitle("Sets")
             .searchable(text: $query, prompt: "Artist, set, show, or venue")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if fromCache { OfflineBanner(cachedAt: cachedAt) }
+            }
             .task { await reload() }
             .refreshable { await reload() }
+            .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+                Task { await reload() }
+            }
         }
     }
 
@@ -101,7 +109,11 @@ struct SetsListView: View {
         loading = sets.isEmpty
         error = nil
         do {
-            sets = try await APIClient.shared.sets()
+            let read = try await APIClient.shared.sets()
+            sets = read.value
+            fromCache = read.fromCache
+            cachedAt = read.cachedAt
+            error = nil
             loading = false
         } catch {
             self.error = error.localizedDescription

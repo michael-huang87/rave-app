@@ -10,12 +10,15 @@ struct EventDetailView: View {
     @State private var showSchedule = false
     @State private var scheduleSlots = 0
     @State private var editing: SetEntry?
+    @State private var fromCache = false
+    @State private var cachedAt: Date?
 
     var body: some View {
         Group {
             if let event {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        if fromCache { OfflineBanner(cachedAt: cachedAt) }
                         header(event)
                         spendCard(event)
                         setsCard(event)
@@ -53,6 +56,9 @@ struct EventDetailView: View {
             if let event { ScheduleView(event: event) { await reload() } }
         }
         .task { await reload() }
+        .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+            Task { await reload() }
+        }
     }
 
     private func header(_ event: Event) -> some View {
@@ -176,8 +182,15 @@ struct EventDetailView: View {
     private func reload() async {
         async let loaded = APIClient.shared.event(id: eventId)
         async let slots = APIClient.shared.schedule(eventId: eventId).slots.count
-        do { event = try await loaded }
-        catch { self.error = error.localizedDescription }
+        do {
+            let read = try await loaded
+            event = read.value
+            fromCache = read.fromCache
+            cachedAt = read.cachedAt
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
         // Most events never get a schedule, so a failed lookup just leaves the button hidden. A
         // cached one still counts, or the feature would vanish exactly when it is needed offline.
         let cached = await ScheduleStore.shared.record(for: eventId)?.schedule.slots.count ?? 0

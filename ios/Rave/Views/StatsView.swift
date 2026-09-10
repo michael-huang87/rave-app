@@ -5,6 +5,8 @@ import SwiftUI
 struct StatsView: View {
     @State private var stats: Stats?
     @State private var error: String?
+    @State private var fromCache = false
+    @State private var cachedAt: Date?
 
     private static let preview = 10
 
@@ -33,8 +35,14 @@ struct StatsView: View {
             }
             .background(RaveTheme.bg)
             .navigationTitle("Stats")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if fromCache { OfflineBanner(cachedAt: cachedAt) }
+            }
             .task { await load() }
             .refreshable { await load() }
+            .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+                Task { await load() }
+            }
             .navigationDestination(for: StatList.self) { list in
                 RankedList(title: list.title, unit: list.unit, counts: list.counts)
             }
@@ -57,8 +65,15 @@ struct StatsView: View {
 
     @MainActor
     private func load() async {
-        do { stats = try await APIClient.shared.stats() }
-        catch { self.error = error.localizedDescription }
+        do {
+            let read = try await APIClient.shared.stats()
+            stats = read.value
+            fromCache = read.fromCache
+            cachedAt = read.cachedAt
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 
