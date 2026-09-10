@@ -78,6 +78,31 @@ EOF
     echo "Saved $CONF"
 }
 
+# Same read as capture, but prints instead of saving and needs no Tailscale. This is what you run
+# on whatever machine happens to be next to the phone, to relay the values to the build Mac.
+cmd_probe() {
+    command -v dns-sd >/dev/null || die "dns-sd missing (macOS only; on Linux use: avahi-browse -rt _remotepairing._tcp)"
+    echo "Browsing for the phone. Connect it by USB or put it on this wifi, unlocked, Developer Mode on." >&2
+    local browse instance lookup host port txt
+    browse="$(sniff 8 dns-sd -B _remotepairing._tcp local.)"
+    instance="$(awk '/_remotepairing/ {print $NF}' <<<"$browse" | tail -1)"
+    [ -n "$instance" ] || { echo "$browse" >&2; die "nothing advertising _remotepairing._tcp"; }
+    lookup="$(sniff 8 dns-sd -L "$instance" _remotepairing._tcp local.)"
+    host="$(sed -n 's/.*can be reached at \([^:]*\):.*/\1/p' <<<"$lookup" | tail -1)"
+    port="$(sed -n 's/.*can be reached at [^:]*:\([0-9]*\).*/\1/p' <<<"$lookup" | tail -1)"
+    txt="$(grep -oE '(identifier|authTag|ver|minVer|flags)=[^ ]*' <<<"$lookup" | tr '\n' ' ')"
+    [ -n "$port" ] && [ -n "$txt" ] || { echo "$lookup" >&2; die "could not read the advertisement"; }
+    echo
+    echo "--- send everything below back ---"
+    cat <<EOF
+RP_INSTANCE='$instance'
+RP_PORT='$port'
+RP_HOST='$host'
+RP_TXT='$txt'
+EOF
+    echo "--- end ---"
+}
+
 cmd_bridge() {
     [ -f "$CONF" ] || die "no $CONF; run '$0 capture' with the phone plugged in first"
     # shellcheck disable=SC1090
@@ -153,6 +178,7 @@ cmd_uninstall_agent() {
 }
 
 case "${1:-}" in
+    probe)           cmd_probe ;;
     capture)         cmd_capture ;;
     bridge)          cmd_bridge ;;
     status)          cmd_status ;;
@@ -161,8 +187,10 @@ case "${1:-}" in
     *) cat >&2 <<EOF
 usage: $0 <command>
 
-  capture           read the phone's Bonjour advertisement. Run ONCE with the phone
-                    on USB or this wifi; it is what the bridge later replays.
+  probe             print the phone's Bonjour advertisement and stop. Run this on whatever
+                    machine is next to the phone; it needs no Tailscale and writes nothing.
+  capture           same read, saved to the config on THIS Mac. Run it here when the phone
+                    is on USB or this wifi; it is what the bridge later replays.
   bridge            fabricate that advertisement and proxy CoreDevice to the tailnet.
                     Runs in the foreground until killed. Prefer running this only while
                     installing: it holds ~130MB of socat listeners at the default range.

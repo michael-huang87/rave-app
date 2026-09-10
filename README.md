@@ -167,6 +167,20 @@ bash scripts/coredevice-tailnet.sh bridge        # then, with the phone anywhere
 `capture` is the step that needs the phone present, because it reads the real advertisement the
 bridge later replays. After that the phone can be on cellular in another country.
 
+If the phone is never next to the build Mac, run `probe` on whatever machine it *is* next to and
+copy the block it prints into the build Mac's config. `probe` needs no Tailscale and writes nothing,
+and on a Linux box the equivalent is `avahi-browse -rt _remotepairing._tcp`.
+
+**Before trusting any of this, check the phone actually accepts the connection over the tunnel:**
+
+```bash
+nc -z -G 5 <phone-tailnet-ip> 49152 && echo OPEN || echo CLOSED
+```
+
+Everything else is plumbing around that one fact. If it reports CLOSED with the phone awake and
+Tailscale connected in the foreground, the bridge cannot work, because there is nothing on the far
+side for `socat` to reach.
+
 Run `bridge` while installing rather than leaving it up. Each proxied port costs a `socat` pair at
 about 2.1MB, so the default 55100-55130 range holds roughly 130MB. The trusted tunnel picks its port
 per session, so widen with `COREDEVICE_PORT_LO` / `COREDEVICE_PORT_HI` if an install cannot connect.
