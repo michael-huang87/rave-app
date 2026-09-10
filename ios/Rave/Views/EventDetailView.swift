@@ -178,7 +178,9 @@ struct EventDetailView: View {
         async let slots = APIClient.shared.schedule(eventId: eventId).slots.count
         do { event = try await loaded }
         catch { self.error = error.localizedDescription }
-        // Most events never get a schedule, so a failed lookup just leaves the button hidden.
-        scheduleSlots = (try? await slots) ?? 0
+        // Most events never get a schedule, so a failed lookup just leaves the button hidden. A
+        // cached one still counts, or the feature would vanish exactly when it is needed offline.
+        let cached = await ScheduleStore.shared.record(for: eventId)?.schedule.slots.count ?? 0
+        scheduleSlots = max(cached, (try? await slots) ?? 0)
     }
 }
