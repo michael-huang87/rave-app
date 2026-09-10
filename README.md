@@ -147,6 +147,27 @@ Your Mac must be awake and online. Tailscale on the phone must be connected (VPN
 
 ### Installing a build to a phone that is not here
 
+> **This did not work on this setup.** Keep installing over USB or home wifi. The rest of this
+> section is kept for the diagnosis, not as a working recipe. Measured with Developer Mode on, the
+> phone awake and unlocked, and Tailscale connected in the foreground:
+>
+> ```
+> tailscale ping 100.101.5.98   pong via DERP(lax) 185ms   # reachable
+> nc -z 100.101.5.98 49152      Connection refused 0.2s    # the port the bridge needs
+> nc -z 100.101.5.98 9999       Connection refused 0.2s    # nothing should be here
+> ```
+>
+> Every port refuses instantly, including one nothing uses. A firewall would drop and time out, so
+> packets are arriving and something is actively answering "nothing is listening". The tailnet is
+> fine too: this Mac's own backend serves over the same tunnel on `100.105.205.40:8000`.
+>
+> The likely cause is architectural. Tailscale on iOS terminates the tunnel in the app's own
+> userspace netstack, so it has no way to hand an inbound connection to a system daemon like
+> `remotepairingd`. If that is right, no amount of Bonjour fabrication on the Mac helps, because
+> nothing on the far side accepts. Worth retrying if a direct (non-DERP) connection is ever
+> established, or after an iOS or Tailscale release.
+
+
 Tailscale lets the running app reach the API from anywhere. It does **not** let Xcode install a
 build: with the phone online on the tailnet, `xcrun devicectl list devices` still reports it
 `unavailable`. iOS 17+ discovers phones through Bonjour, which is link-local multicast and cannot
