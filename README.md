@@ -42,7 +42,21 @@ curl -s http://127.0.0.1:8000/sets | head
 curl -s http://127.0.0.1:8000/recap
 ```
 
-Useful routes: `GET /events`, `GET /events/{id}` (includes sets + spend), `POST /events`, `PATCH /events/{id}`, `PATCH /events/{id}/spend`, `POST /events/{id}/sets`, `POST /events/{id}/sets/bulk`, `PATCH /sets/{id}`, `DELETE /sets/{id}`, `GET /recap`, `GET /stats`.
+Useful routes: `GET /events`, `GET /events/{id}` (includes sets + spend), `POST /events`, `PATCH /events/{id}`, `PATCH /events/{id}/spend`, `POST /events/{id}/sets`, `POST /events/{id}/sets/bulk`, `PATCH /sets/{id}`, `DELETE /sets/{id}`, `PUT /events/{id}/schedule`, `GET /events/{id}/schedule`, `POST /events/{id}/schedule/seen`, `GET /recap`, `GET /stats`.
+
+## Set times
+
+A festival schedule is uploaded per event and read by the app at runtime, so a schedule that drops
+the week of the show appears without a new build. The log keeps the order the sets ran in, not the
+clock times.
+
+```bash
+python3 scripts/upload_schedule.py <event_id> schedule.csv --dry-run
+python3 scripts/upload_schedule.py <event_id> schedule.csv
+```
+
+CSV columns are `day,stage,title,start_time,end_time`. `day` is the **festival** day, so a 02:00 set
+is uploaded under the night it belongs to, not the calendar date it starts on.
 
 ```bash
 python3 -m pytest tests/test_api.py -q

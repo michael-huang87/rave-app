@@ -4,6 +4,9 @@
 
 That is the whole product. Not a festival finder, ticket marketplace, social graph, lighting suite, or a second finance app.
 
+A schedule you upload for a show you are already tracking is the one exception, and it earns its
+place by making logging faster rather than by helping you discover anything. See **Set times**.
+
 ## Sheet mapping
 
 Source (public): [Google Sheet](https://docs.google.com/spreadsheets/d/1-J4MFiVGu204R5ySidxWPogmTyiNU-v5XUUuIXAKq0w/edit)
@@ -56,6 +59,21 @@ Adding sets is two moves, because a festival night is a list you type fast and f
 artists** takes a list of names for one night, suggests names already in your data, and makes one set
 per name. Tapping a set opens it for correction: rename it into a b2b, fix the artists or the date,
 or delete it. Re-typing a night you already entered adds nothing.
+
+## Set times
+
+A schedule can be uploaded per event and shown as a checklist, so a night gets logged by ticking off
+what you saw. **Set times** appears on show detail only once a schedule exists for that show, and the
+app reads it at runtime, so a schedule uploaded the week of the festival shows up without a new
+build.
+
+What gets stored is the order the sets ran in, not the clock time. `sets.slot_index` carries that
+order and nothing carries a time, because "what did I see, in what order" is a question this product
+answers and "what time was I standing there" is not. The times exist on the schedule, which is
+reference data you uploaded, and they are there so the picker reads like the poster.
+
+A festival day runs past midnight, so a 02:00 set belongs to the night before. `DAY_ROLLOVER_HOUR`
+is 6: a slot starting before then sorts to the end of its day rather than the start.
 
 The Shows list runs newest-first, except under **Planned**, where it flips to soonest-first — the
 next show is the one that matters.
