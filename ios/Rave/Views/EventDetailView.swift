@@ -5,8 +5,9 @@ struct EventDetailView: View {
     @State private var event: Event?
     @State private var error: String?
     @State private var showSpend = false
-    @State private var showSet = false
+    @State private var showAdd = false
     @State private var showEdit = false
+    @State private var editing: SetEntry?
 
     var body: some View {
         Group {
@@ -37,8 +38,11 @@ struct EventDetailView: View {
         .sheet(isPresented: $showSpend) {
             if let event { LogSpendView(event: event) { await reload() } }
         }
-        .sheet(isPresented: $showSet) {
-            if let event { LogSetView(event: event) { await reload() } }
+        .sheet(isPresented: $showAdd) {
+            if let event { QuickAddSetsView(event: event) { await reload() } }
+        }
+        .sheet(item: $editing) { set in
+            EditSetView(set: set) { await reload() }
         }
         .sheet(isPresented: $showEdit) {
             if let event { EventFormView(existing: event) { await reload() } }
@@ -111,21 +115,20 @@ struct EventDetailView: View {
             HStack {
                 Text(setsTitle(event)).font(.headline)
                 Spacer()
-                Button("Log a set") { showSet = true }
+                Button("Add artists") { showAdd = true }
             }
             if let sets = event.sets, !sets.isEmpty {
                 let nights = sets.grouped { $0.date ?? "" }
                 ForEach(Array(nights.enumerated()), id: \.element.key) { index, night in
                     if nights.count > 1 {
-                        Text(Self.nightTitle(night.key, index: index, start: event.startDate))
+                        Text(nightLabel(night.key, index: index, start: event.startDate))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(RaveTheme.accent)
                             .padding(.top, index == 0 ? 0 : 8)
                     }
                     ForEach(night.values) { set in
-                        Text(set.title)
-                            .font(.body.weight(.medium))
-                            .padding(.vertical, 4)
+                        Button { editing = set } label: { setRow(set) }
+                            .buttonStyle(.plain)
                     }
                 }
             } else {
@@ -138,30 +141,20 @@ struct EventDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private static let nightFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE MMM d"
-        f.timeZone = TimeZone(secondsFromGMT: 0)
-        return f
-    }()
-
-    /// Day numbers come off the event's start date, so a night with nothing logged still counts.
-    private static func nightTitle(_ iso: String, index: Int, start: String?) -> String {
-        let parse = DateFormatter()
-        parse.dateFormat = "yyyy-MM-dd"
-        parse.timeZone = TimeZone(secondsFromGMT: 0)
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-
-        let date = parse.date(from: iso)
-        var number = index + 1
-        if let date, let start, let from = parse.date(from: start),
-           let offset = calendar.dateComponents([.day], from: from, to: date).day, offset >= 0 {
-            number = offset + 1
+    private func setRow(_ set: SetEntry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(set.title)
+                .font(.body.weight(.medium))
+            // Most sets name a single artist matching the title; only b2b rows add anything.
+            if set.artists != [set.title] {
+                Text(set.artists.joined(separator: ", "))
+                    .font(.caption)
+                    .foregroundStyle(RaveTheme.accent2)
+            }
         }
-        return ["Day \(number)", date.map { nightFormatter.string(from: $0) }]
-            .compactMap { $0 }
-            .joined(separator: " · ")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     @MainActor

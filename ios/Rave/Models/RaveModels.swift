@@ -56,6 +56,55 @@ struct Event: Identifiable, Codable, Hashable {
 
     /// The sheet dates a festival as a range; a single night is a show.
     var isFestival: Bool { (days ?? 1) > 1 }
+
+    /// Every night the event covers, logged or not, so a night with nothing on it is still offerable.
+    var nights: [String] {
+        guard let startDate else { return [] }
+        guard let endDate,
+              let from = isoDayFormatter.date(from: startDate),
+              let to = isoDayFormatter.date(from: endDate),
+              to >= from else { return [startDate] }
+        var days: [String] = []
+        var cursor = from
+        while cursor <= to, let next = gmtCalendar.date(byAdding: .day, value: 1, to: cursor) {
+            days.append(isoDayFormatter.string(from: cursor))
+            cursor = next
+        }
+        return days
+    }
+}
+
+private let isoDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    f.timeZone = TimeZone(secondsFromGMT: 0)
+    return f
+}()
+
+private let nightFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "EEE MMM d"
+    f.timeZone = TimeZone(secondsFromGMT: 0)
+    return f
+}()
+
+private let gmtCalendar: Calendar = {
+    var c = Calendar(identifier: .gregorian)
+    c.timeZone = TimeZone(secondsFromGMT: 0)!
+    return c
+}()
+
+/// Day numbers come off the event's start date, so a night with nothing logged still counts.
+func nightLabel(_ iso: String, index: Int, start: String?) -> String {
+    let date = isoDayFormatter.date(from: iso)
+    var number = index + 1
+    if let date, let start, let from = isoDayFormatter.date(from: start),
+       let offset = gmtCalendar.dateComponents([.day], from: from, to: date).day, offset >= 0 {
+        number = offset + 1
+    }
+    return ["Day \(number)", date.map { nightFormatter.string(from: $0) }]
+        .compactMap { $0 }
+        .joined(separator: " · ")
 }
 
 struct SetEntry: Identifiable, Codable, Hashable {
@@ -141,6 +190,22 @@ struct SpendDraft: Codable {
 struct SetDraft: Codable {
     var title: String
     var artists: [String]
+    var date: String?
+}
+
+struct BulkSetsDraft: Codable {
+    var artists: [String]
+    var date: String?
+}
+
+struct BulkSetsResponse: Codable {
+    var created: [SetEntry]
+    var skipped: [String]
+}
+
+struct SetPatch: Codable {
+    var title: String?
+    var artists: [String]?
     var date: String?
 }
 
