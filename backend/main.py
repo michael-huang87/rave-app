@@ -554,10 +554,21 @@ def valid_day(value: str | None) -> bool:
         return False
 
 
+def day_minutes(time: str | None, after: int | None = None) -> int | None:
+    """Where HH:MM sits on the festival day's axis, counting from the 6am boundary.
+    `after` is the start a block is measured from, so a 23:00 set ending 00:30 is 90 minutes
+    long rather than a negative one."""
+    if not time:
+        return None
+    hour, minute = (int(p) for p in time.split(":"))
+    rolled = (hour + 24 if hour < DAY_ROLLOVER_HOUR else hour) * 60 + minute - DAY_ROLLOVER_HOUR * 60
+    return rolled + 24 * 60 if after is not None and rolled < after else rolled
+
+
 def slot_sort_key(slot: ScheduleSlotIn, position: int) -> tuple:
-    hour, minute = (int(p) for p in slot.start_time.split(":")) if slot.start_time else (99, 0)
-    rolled = hour + 24 if hour < DAY_ROLLOVER_HOUR else hour
-    return (slot.day, rolled, minute, (slot.stage or "").casefold(), position)
+    minutes = day_minutes(slot.start_time)
+    # A slot with no start time has no place on the axis, so it sorts past every real one.
+    return (slot.day, 99 * 60 if minutes is None else minutes, (slot.stage or "").casefold(), position)
 
 
 def checked_slots(event_id: str, slots: list[ScheduleSlotIn]) -> list[tuple[str, ScheduleSlotIn]]:
@@ -643,6 +654,7 @@ def get_schedule(event_id: str) -> dict:
             "SELECT * FROM schedule_slots WHERE event_id = ? ORDER BY sort_index", (event_id,)
         ):
             set_id = logged.get(r["id"])
+            start_minute = day_minutes(r["start_time"])
             slots.append(
                 {
                     "id": r["id"],
@@ -652,6 +664,8 @@ def get_schedule(event_id: str) -> dict:
                     "artists": split_artists(r["title"]),
                     "start_time": r["start_time"],
                     "end_time": r["end_time"],
+                    "start_minute": start_minute,
+                    "end_minute": day_minutes(r["end_time"], start_minute),
                     "sort_index": r["sort_index"],
                     "seen": set_id is not None,
                     "set_id": set_id,

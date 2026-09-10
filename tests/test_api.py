@@ -686,3 +686,53 @@ def test_a_parenthetical_qualifier_is_not_part_of_the_artist(client):
         name in artists
         for name in ("Excision (2 Hour Set)", "Doctor P (DNB Set)", "Funtcase b2b Doctor P (DNB Set)")
     )
+
+
+def test_slot_minutes_put_a_late_set_after_an_early_one(client):
+    """The stage grid lays a night out on one axis, so 01:30 sits past 14:00 rather than before it."""
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "Wasteland", "title": "Closer", "start_time": "01:30"},
+                {"day": "2026-09-18", "stage": "Wasteland", "title": "Opener", "start_time": "14:00"},
+            ]
+        },
+    )
+    slots = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["title"] for s in slots] == ["Opener", "Closer"]
+    assert slots[1]["start_minute"] > slots[0]["start_minute"]
+    assert [s["start_minute"] for s in slots] == [480, 1170]
+    assert [s["sort_index"] for s in slots] == [0, 1]
+
+
+def test_a_block_crossing_midnight_has_a_positive_length(client):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {
+                    "day": "2026-09-18",
+                    "stage": "Prehistoric Paradox",
+                    "title": "Excision",
+                    "start_time": "23:00",
+                    "end_time": "00:30",
+                }
+            ]
+        },
+    )
+    slot = client.get(f"/events/{eid}/schedule").json()["slots"][0]
+    assert slot["end_minute"] - slot["start_minute"] == 90
+
+
+def test_a_slot_without_a_start_time_has_no_minutes(client):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={"slots": [{"day": "2026-09-18", "stage": "Wompy Woods", "title": "TBA"}]},
+    )
+    slot = client.get(f"/events/{eid}/schedule").json()["slots"][0]
+    assert slot["start_minute"] is None
+    assert slot["end_minute"] is None
