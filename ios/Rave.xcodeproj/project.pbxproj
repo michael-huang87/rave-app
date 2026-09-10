@@ -8,17 +8,21 @@
 
 /* Begin PBXBuildFile section */
 		20BDDC6A844E4C43A8AD1149 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31BBB87AA721441794052FCB /* ContentView.swift */; };
-		23F11D45ED8D42F794F33A17 /* LogSetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6723B972711474D886230FD /* LogSetView.swift */; };
 		37C065C96A934829843CEEED /* EventListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9991EA08D8442FDB5DE56B1 /* EventListView.swift */; };
 		FBBBE38B7CFE4513881591A2 /* SetsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E513D027442908755314D /* SetsListView.swift */; };
 		38B79B74B08745A48480748B /* RecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DED41FCE98941FEA1FE97A4 /* RecapView.swift */; };
 		A1B2C3D40001745A48480748 /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40002941FEA1FE97A /* StatsView.swift */; };
 		3D391EA81CEF495F86A91B00 /* EventDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E14D6276F7B471B9B85D5D6 /* EventDetailView.swift */; };
+		EF4E60850A1FAB5015E5618C /* QuickAddSetsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5DF72350CB4AA6213B970F0 /* QuickAddSetsView.swift */; };
+		BC03930A1C2D3B04830B3F08 /* EditSetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE2BF303729EAFC5A20E46D /* EditSetView.swift */; };
+		F2230FBB7383FB4FAE5F0FFE /* ScheduleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFAD9F5F70FD993CA103F0A0 /* ScheduleView.swift */; };
 		6DF7EBE739FD43AA9F515AAA /* RaveModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E79CE84A3A4450848D5ADE /* RaveModels.swift */; };
 		87AFB6054A7943A5BDA4E94F /* EventFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E27DE59E550497ABA8BFACD /* EventFormView.swift */; };
 		8B2463E3544B4C46B7616070 /* RaveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7904AD9601D845688D4A6190 /* RaveApp.swift */; };
 		C17B7AF61FD94540AA8BDE96 /* LogSpendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E23B85CA7164EA7A3A38AA7 /* LogSpendView.swift */; };
 		D8A6767462024799AEAB1709 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B73B4DD4D0B4C7988D4A938 /* APIClient.swift */; };
+		EDDEB1840C5E385217923735 /* ScheduleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B711F225BACFA5BAB4F79757 /* ScheduleStore.swift */; };
+		18E578D873DD0C969FF0AAFB /* ScheduleGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9597CBAD004B330A49689895 /* ScheduleGridView.swift */; };
 		1A2B3C4D5E6F708192A3B4C6 /* LastReadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F708192A3B4C5 /* LastReadStore.swift */; };
 		3C4D5E6F708192A3B4C5D6E8 /* NetworkRestored.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4D5E6F708192A3B4C5D6E7 /* NetworkRestored.swift */; };
 		2B3C4D5E6F708192A3B4C5D7 /* OfflineBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B3C4D5E6F708192A3B4C5D6 /* OfflineBanner.swift */; };
@@ -37,7 +41,11 @@
 		7904AD9601D845688D4A6190 /* RaveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaveApp.swift; sourceTree = "<group>"; };
 		8E14D6276F7B471B9B85D5D6 /* EventDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDetailView.swift; sourceTree = "<group>"; };
 		8E23B85CA7164EA7A3A38AA7 /* LogSpendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSpendView.swift; sourceTree = "<group>"; };
-		A6723B972711474D886230FD /* LogSetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSetView.swift; sourceTree = "<group>"; };
+		A5DF72350CB4AA6213B970F0 /* QuickAddSetsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickAddSetsView.swift; sourceTree = "<group>"; };
+		FFAD9F5F70FD993CA103F0A0 /* ScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleView.swift; sourceTree = "<group>"; };
+		9597CBAD004B330A49689895 /* ScheduleGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleGridView.swift; sourceTree = "<group>"; };
+		B711F225BACFA5BAB4F79757 /* ScheduleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleStore.swift; sourceTree = "<group>"; };
+		6CE2BF303729EAFC5A20E46D /* EditSetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditSetView.swift; sourceTree = "<group>"; };
 		B9991EA08D8442FDB5DE56B1 /* EventListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventListView.swift; sourceTree = "<group>"; };
 		0E8E513D027442908755314D /* SetsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetsListView.swift; sourceTree = "<group>"; };
 		C0A18230BA54485EAABCA720 /* Rave.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rave.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -77,6 +85,7 @@
 			isa = PBXGroup;
 			children = (
 				1B73B4DD4D0B4C7988D4A938 /* APIClient.swift */,
+				B711F225BACFA5BAB4F79757 /* ScheduleStore.swift */,
 				1A2B3C4D5E6F708192A3B4C5 /* LastReadStore.swift */,
 				3C4D5E6F708192A3B4C5D6E7 /* NetworkRestored.swift */,
 			);
@@ -104,7 +113,10 @@
 				0E8E513D027442908755314D /* SetsListView.swift */,
 				8E14D6276F7B471B9B85D5D6 /* EventDetailView.swift */,
 				2E27DE59E550497ABA8BFACD /* EventFormView.swift */,
-				A6723B972711474D886230FD /* LogSetView.swift */,
+				A5DF72350CB4AA6213B970F0 /* QuickAddSetsView.swift */,
+				FFAD9F5F70FD993CA103F0A0 /* ScheduleView.swift */,
+				9597CBAD004B330A49689895 /* ScheduleGridView.swift */,
+				6CE2BF303729EAFC5A20E46D /* EditSetView.swift */,
 				8E23B85CA7164EA7A3A38AA7 /* LogSpendView.swift */,
 				3DED41FCE98941FEA1FE97A4 /* RecapView.swift */,
 				A1B2C3D40002941FEA1FE97A /* StatsView.swift */,
@@ -194,6 +206,7 @@
 				20BDDC6A844E4C43A8AD1149 /* ContentView.swift in Sources */,
 				6DF7EBE739FD43AA9F515AAA /* RaveModels.swift in Sources */,
 				D8A6767462024799AEAB1709 /* APIClient.swift in Sources */,
+				EDDEB1840C5E385217923735 /* ScheduleStore.swift in Sources */,
 				1A2B3C4D5E6F708192A3B4C6 /* LastReadStore.swift in Sources */,
 				3C4D5E6F708192A3B4C5D6E8 /* NetworkRestored.swift in Sources */,
 				2B3C4D5E6F708192A3B4C5D7 /* OfflineBanner.swift in Sources */,
@@ -201,7 +214,10 @@
 				FBBBE38B7CFE4513881591A2 /* SetsListView.swift in Sources */,
 				3D391EA81CEF495F86A91B00 /* EventDetailView.swift in Sources */,
 				87AFB6054A7943A5BDA4E94F /* EventFormView.swift in Sources */,
-				23F11D45ED8D42F794F33A17 /* LogSetView.swift in Sources */,
+				EF4E60850A1FAB5015E5618C /* QuickAddSetsView.swift in Sources */,
+				BC03930A1C2D3B04830B3F08 /* EditSetView.swift in Sources */,
+				F2230FBB7383FB4FAE5F0FFE /* ScheduleView.swift in Sources */,
+				18E578D873DD0C969FF0AAFB /* ScheduleGridView.swift in Sources */,
 				C17B7AF61FD94540AA8BDE96 /* LogSpendView.swift in Sources */,
 				38B79B74B08745A48480748B /* RecapView.swift in Sources */,
 				A1B2C3D40001745A48480748 /* StatsView.swift in Sources */,

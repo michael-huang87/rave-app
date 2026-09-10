@@ -123,6 +123,26 @@ actor APIClient {
         try await send("/events/\(eventId)/sets", method: "POST", body: draft)
     }
 
+    func bulkAddSets(eventId: String, draft: BulkSetsDraft) async throws -> BulkSetsResponse {
+        try await send("/events/\(eventId)/sets/bulk", method: "POST", body: draft)
+    }
+
+    func updateSet(id: String, patch: SetPatch) async throws -> SetEntry {
+        try await send("/sets/\(id)", method: "PATCH", body: patch)
+    }
+
+    func deleteSet(id: String) async throws {
+        try await sendNoContent("/sets/\(id)", method: "DELETE")
+    }
+
+    func schedule(eventId: String) async throws -> Schedule {
+        try await get("/events/\(eventId)/schedule")
+    }
+
+    func markSlotsSeen(eventId: String, slotIds: [String]) async throws -> BulkSetsResponse {
+        try await send("/events/\(eventId)/schedule/seen", method: "POST", body: MarkSeenDraft(slotIds: slotIds))
+    }
+
     private func makeURL(_ path: String, query: [URLQueryItem] = []) throws -> URL {
         guard var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { throw APIError.badURL }
         comps.path = path.hasPrefix("/") ? path : "/" + path
@@ -173,6 +193,20 @@ actor APIClient {
         }
         try Self.check(response)
         do { return try decoder.decode(T.self, from: data) } catch { throw APIError.decode }
+    }
+
+    private func sendNoContent(_ path: String, method: String) async throws {
+        let url = try makeURL(path)
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: req)
+        } catch {
+            if Self.isOffline(error) { throw APIError.needsSignal }
+            throw APIError.transport(Self.describe(error))
+        }
+        try Self.check(response)
     }
 
     private static func isOffline(_ error: Error) -> Bool {

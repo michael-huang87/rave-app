@@ -15,6 +15,7 @@ DerivedData/
 
 # Local-only show log (generate on your machine, do not commit)
 data/*.json
+data/*.csv
 data/CLEANING.md
 data/source/
 

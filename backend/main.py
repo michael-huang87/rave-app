@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from contextlib import asynccontextmanager, contextmanager
 from datetime import date
@@ -84,7 +85,20 @@ def init_schema(conn: sqlite3.Connection) -> None:
             year INTEGER,
             date TEXT,
             sheet_row INTEGER,
+            slot_index INTEGER,
+            slot_id TEXT,
             artists_json TEXT NOT NULL DEFAULT '[]',
+            FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS schedule_slots (
+            id TEXT PRIMARY KEY,
+            event_id TEXT NOT NULL,
+            day TEXT NOT NULL,
+            stage TEXT,
+            title TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            sort_index INTEGER NOT NULL,
             FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
         );
         """
@@ -95,6 +109,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
     if "sheet_row" not in cols:
         conn.execute("ALTER TABLE sets ADD COLUMN sheet_row INTEGER")
         backfill_sheet_rows(conn)
+    if "slot_index" not in cols:
+        conn.execute("ALTER TABLE sets ADD COLUMN slot_index INTEGER")
+    if "slot_id" not in cols:
+        conn.execute("ALTER TABLE sets ADD COLUMN slot_id TEXT")
 
 
 def backfill_sheet_rows(conn: sqlite3.Connection) -> None:
@@ -121,7 +139,15 @@ NOT_ATTENDED_MARKERS = ("(cancelled)", "(skipped)")
 
 # The sheet lists a night's sets in the order you saw them, so sheet_row is the only
 # time signal there is. Hand-logged sets have none and sort to the end of their day.
-SET_ORDER = "COALESCE(sheet_row, 1000000)"
+SET_ORDER = "COALESCE(sheet_row, 1000000), COALESCE(slot_index, 1000000)"
+
+# A festival day runs past midnight, so an hour before this one closes the day before it
+# rather than opening its own: 6am is later than any set starts and earlier than any doors.
+DAY_ROLLOVER_HOUR = 6
+
+DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+TIME_RE = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
+QUALIFIER_RE = re.compile(r"\s*\([^()]*\)\s*$")
 
 
 def status_for(show: str, start: str | None, end: str | None) -> str:
@@ -181,6 +207,20 @@ def shape_set(row: sqlite3.Row) -> dict:
         "date": row["date"],
         "artists": artists,
     }
+
+
+def split_artists(title: str) -> list[str]:
+    """The sheet writes a back-to-back as one line, so " b2b " is the only artist boundary there is.
+    A trailing "(2 Hour Set)" qualifies the set, not the act, and the sheet keeps it in the title
+    and out of ARTISTS. A colon is left alone: "Malaa: Alter Ego" names the artist first and
+    "Fresh Meat: KEEB" names it second, so no rule is right both times."""
+    names = [n.strip() for n in re.split(r"\s+b2b\s+", title, flags=re.IGNORECASE) if n.strip()]
+    return [QUALIFIER_RE.sub("", n).strip() or n for n in names] or [title.strip()]
+
+
+def norm_title(title: str | None) -> str:
+    """The key for "have I already logged this act tonight". Case and spacing are not a new artist."""
+    return " ".join((title or "").split()).casefold()
 
 
 def new_id(*parts: object) -> str:
@@ -281,6 +321,33 @@ class SetIn(BaseModel):
     year: int | None = None
 
 
+class BulkSetsIn(BaseModel):
+    artists: list[str] = []
+    date: str | None = None
+
+
+class SetPatch(BaseModel):
+    title: str | None = None
+    artists: list[str] | None = None
+    date: str | None = None
+
+
+class ScheduleSlotIn(BaseModel):
+    day: str
+    stage: str | None = None
+    title: str
+    start_time: str | None = None
+    end_time: str | None = None
+
+
+class ScheduleIn(BaseModel):
+    slots: list[ScheduleSlotIn] = []
+
+
+class SlotsSeenIn(BaseModel):
+    slot_ids: list[str] = []
+
+
 def event_with_count(conn: sqlite3.Connection, event_id: str) -> dict:
     row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
     if not row:
@@ -319,7 +386,11 @@ def get_event(event_id: str) -> dict:
         sets = [
             shape_set(r)
             for r in conn.execute(
-                f"SELECT * FROM sets WHERE event_id = ? ORDER BY date, {SET_ORDER}", (event_id,)
+                # The sheet lists a night newest-first, so read it back reversed. A hand-logged set
+                # has no sheet_row and closes the night, which is why it coalesces low, not high.
+                "SELECT * FROM sets WHERE event_id = ? "
+                "ORDER BY date, COALESCE(sheet_row, 0) DESC, COALESCE(slot_index, 1000000), rowid",
+                (event_id,),
             )
         ]
         event["sets"] = sets
@@ -393,33 +464,253 @@ def log_spend(event_id: str, body: SpendIn) -> dict:
         return event_with_count(conn, event_id)
 
 
+def insert_set(
+    conn: sqlite3.Connection,
+    event: sqlite3.Row,
+    title: str,
+    artists: list[str],
+    date: str | None,
+    year: int | None,
+    slot_index: int | None = None,
+    slot_id: str | None = None,
+) -> sqlite3.Row:
+    """Seeing the same act twice in a night is legitimate, so a taken id gets a discriminator
+    rather than an IntegrityError. The first hash keeps its old inputs so seeded ids do not move."""
+    parts: list[object] = ["set", event["id"], title, date, len(artists)]
+    sid = new_id(*parts)
+    n = 1
+    while conn.execute("SELECT 1 FROM sets WHERE id = ?", (sid,)).fetchone():
+        sid = new_id(*parts, n)
+        n += 1
+    conn.execute(
+        """INSERT INTO sets
+           (id, event_id, title, show, venue, city, year, date, slot_index, slot_id, artists_json)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            sid,
+            event["id"],
+            title.strip(),
+            event["show"],
+            event["venue"],
+            event["city"],
+            year or event["year"],
+            date or event["start_date"],
+            slot_index,
+            slot_id,
+            json.dumps(artists),
+        ),
+    )
+    return conn.execute("SELECT * FROM sets WHERE id = ?", (sid,)).fetchone()
+
+
 @app.post("/events/{event_id}/sets", status_code=201)
 def log_set(event_id: str, body: SetIn) -> dict:
     with db() as conn:
         event = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         if not event:
             raise HTTPException(404, "event not found")
-        artists = body.artists or [body.title]
-        artists = [a.strip() for a in artists if a and a.strip()]
-        sid = new_id("set", event_id, body.title, body.date, len(artists))
-        conn.execute(
-            """INSERT INTO sets
-               (id, event_id, title, show, venue, city, year, date, artists_json)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (
-                sid,
-                event_id,
-                body.title.strip(),
-                event["show"],
-                event["venue"],
-                event["city"],
-                body.year or event["year"],
-                body.date or event["start_date"],
-                json.dumps(artists),
-            ),
+        artists = [a.strip() for a in body.artists if a and a.strip()] or split_artists(body.title)
+        return shape_set(insert_set(conn, event, body.title, artists, body.date, body.year))
+
+
+@app.post("/events/{event_id}/sets/bulk", status_code=201)
+def log_sets_bulk(event_id: str, body: BulkSetsIn) -> dict:
+    """One typed line is one set. The pasted order is the night's only time signal, so it is
+    walked in order, and a re-paste of the same list skips instead of duplicating."""
+    with db() as conn:
+        event = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        if not event:
+            raise HTTPException(404, "event not found")
+        set_date = body.date or event["start_date"]
+        seen = {
+            norm_title(r["title"])
+            for r in conn.execute(
+                # IS, not =, because an event with no start_date dates its sets NULL,
+                # and = never matches NULL, which would re-add the whole list on every paste.
+                "SELECT title FROM sets WHERE event_id = ? AND date IS ?", (event_id, set_date)
+            )
+        }
+        created: list[dict] = []
+        skipped: list[str] = []
+        for entry in body.artists:
+            title = entry.strip()
+            if not title:
+                continue
+            key = norm_title(title)
+            if key in seen:
+                skipped.append(entry)
+                continue
+            seen.add(key)
+            created.append(
+                shape_set(insert_set(conn, event, title, split_artists(title), set_date, None))
+            )
+        return {"created": created, "skipped": skipped}
+
+
+def valid_day(value: str | None) -> bool:
+    try:
+        return bool(value and DAY_RE.fullmatch(value) and date.fromisoformat(value))
+    except ValueError:
+        return False
+
+
+def day_minutes(time: str | None, after: int | None = None) -> int | None:
+    """Where HH:MM sits on the festival day's axis, counting from the 6am boundary.
+    `after` is the start a block is measured from, so a 23:00 set ending 00:30 is 90 minutes
+    long rather than a negative one."""
+    if not time:
+        return None
+    hour, minute = (int(p) for p in time.split(":"))
+    rolled = (hour + 24 if hour < DAY_ROLLOVER_HOUR else hour) * 60 + minute - DAY_ROLLOVER_HOUR * 60
+    return rolled + 24 * 60 if after is not None and rolled < after else rolled
+
+
+def slot_sort_key(slot: ScheduleSlotIn, position: int) -> tuple:
+    minutes = day_minutes(slot.start_time)
+    # A slot with no start time has no place on the axis, so it sorts past every real one.
+    return (slot.day, 99 * 60 if minutes is None else minutes, (slot.stage or "").casefold(), position)
+
+
+def checked_slots(event_id: str, slots: list[ScheduleSlotIn]) -> list[tuple[str, ScheduleSlotIn]]:
+    """A schedule arrives from a spreadsheet, so every row is checked before any of it lands."""
+    ids: dict[str, int] = {}
+    checked: list[tuple[str, ScheduleSlotIn]] = []
+    for i, s in enumerate(slots):
+        if not valid_day(s.day):
+            raise HTTPException(422, f"row {i}: day {s.day!r} is not YYYY-MM-DD")
+        for field in ("start_time", "end_time"):
+            t = getattr(s, field)
+            if t and not TIME_RE.fullmatch(t):
+                raise HTTPException(422, f"row {i}: {field} {t!r} is not HH:MM")
+        if not s.title.strip():
+            raise HTTPException(422, f"row {i}: title is blank")
+        sid = new_id("slot", event_id, s.day, s.stage, s.title, s.start_time)
+        if sid in ids:
+            raise HTTPException(422, f"row {i}: duplicates row {ids[sid]}, {s.title!r} on {s.day}")
+        ids[sid] = i
+        checked.append((sid, s))
+    return checked
+
+
+@app.put("/events/{event_id}/schedule")
+def put_schedule(event_id: str, body: ScheduleIn) -> dict:
+    """Replaces the whole schedule, so re-uploading a corrected lineup converges instead of doubling.
+    An empty list is how you clear one."""
+    with db() as conn:
+        if not conn.execute("SELECT 1 FROM events WHERE id = ?", (event_id,)).fetchone():
+            raise HTTPException(404, "event not found")
+        checked = checked_slots(event_id, body.slots)
+        ordered = sorted(
+            ((slot_sort_key(s, i), sid, s) for i, (sid, s) in enumerate(checked)),
+            key=lambda k: k[0],
         )
-        row = conn.execute("SELECT * FROM sets WHERE id = ?", (sid,)).fetchone()
-        return shape_set(row)
+        conn.execute("DELETE FROM schedule_slots WHERE event_id = ?", (event_id,))
+        conn.executemany(
+            """INSERT INTO schedule_slots
+               (id, event_id, day, stage, title, start_time, end_time, sort_index)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            [
+                (sid, event_id, s.day, s.stage, s.title.strip(), s.start_time or None, s.end_time or None, i)
+                for i, (_, sid, s) in enumerate(ordered)
+            ],
+        )
+        return {
+            "event_id": event_id,
+            "days": sorted({s.day for _, s in checked}),
+            "count": len(checked),
+        }
+
+
+def logged_slots(conn: sqlite3.Connection, event_id: str) -> dict[str, str]:
+    """Which set answers for each slot. A ticked set carries the slot it came from, so four slots
+    titled the same tick apart. A set typed by hand or imported from the sheet carries no slot, so
+    it still lights one up, but only the first slot in running order that it matches."""
+    by_slot: dict[str, str] = {}
+    unclaimed: dict[tuple[str | None, str], list[str]] = {}
+    for r in conn.execute(
+        "SELECT id, date, title, slot_id FROM sets WHERE event_id = ? ORDER BY rowid", (event_id,)
+    ):
+        if r["slot_id"]:
+            by_slot[r["slot_id"]] = r["id"]
+        else:
+            unclaimed.setdefault((r["date"], norm_title(r["title"])), []).append(r["id"])
+    for r in conn.execute(
+        "SELECT id, day, title FROM schedule_slots WHERE event_id = ? ORDER BY sort_index", (event_id,)
+    ):
+        pool = unclaimed.get((r["day"], norm_title(r["title"])))
+        if pool and r["id"] not in by_slot:
+            by_slot[r["id"]] = pool.pop(0)
+    return by_slot
+
+
+@app.get("/events/{event_id}/schedule")
+def get_schedule(event_id: str) -> dict:
+    with db() as conn:
+        if not conn.execute("SELECT 1 FROM events WHERE id = ?", (event_id,)).fetchone():
+            raise HTTPException(404, "event not found")
+        logged = logged_slots(conn, event_id)
+        slots = []
+        for r in conn.execute(
+            "SELECT * FROM schedule_slots WHERE event_id = ? ORDER BY sort_index", (event_id,)
+        ):
+            set_id = logged.get(r["id"])
+            start_minute = day_minutes(r["start_time"])
+            slots.append(
+                {
+                    "id": r["id"],
+                    "day": r["day"],
+                    "stage": r["stage"],
+                    "title": r["title"],
+                    "artists": split_artists(r["title"]),
+                    "start_time": r["start_time"],
+                    "end_time": r["end_time"],
+                    "start_minute": start_minute,
+                    "end_minute": day_minutes(r["end_time"], start_minute),
+                    "sort_index": r["sort_index"],
+                    "seen": set_id is not None,
+                    "set_id": set_id,
+                }
+            )
+        return {"event_id": event_id, "days": sorted({s["day"] for s in slots}), "slots": slots}
+
+
+@app.post("/events/{event_id}/schedule/seen", status_code=201)
+def mark_slots_seen(event_id: str, body: SlotsSeenIn) -> dict:
+    """The schedule is the night's running order, so ticked slots log in that order, not tap order.
+    A stale client can hold ids from a replaced schedule, so an unknown id is dropped, not fatal."""
+    with db() as conn:
+        event = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        if not event:
+            raise HTTPException(404, "event not found")
+        rows = (
+            conn.execute(
+                "SELECT * FROM schedule_slots WHERE event_id = ? "
+                f"AND id IN ({','.join('?' * len(body.slot_ids))}) ORDER BY sort_index",
+                (event_id, *body.slot_ids),
+            ).fetchall()
+            if body.slot_ids
+            else []
+        )
+        logged = logged_slots(conn, event_id)
+        created: list[dict] = []
+        skipped: list[str] = []
+        for r in rows:
+            if r["id"] in logged:
+                skipped.append(r["title"])
+                continue
+            row = insert_set(
+                conn,
+                event,
+                r["title"],
+                split_artists(r["title"]),
+                r["day"],
+                None,
+                r["sort_index"],
+                r["id"],
+            )
+            logged[r["id"]] = row["id"]
+            created.append(shape_set(row))
+        return {"created": created, "skipped": skipped}
 
 
 @app.get("/sets")
@@ -432,6 +723,35 @@ def list_sets(event_id: str | None = None) -> list[dict]:
         else:
             rows = conn.execute(f"SELECT * FROM sets ORDER BY date DESC, {SET_ORDER}").fetchall()
         return [shape_set(r) for r in rows]
+
+
+@app.patch("/sets/{set_id}")
+def patch_set(set_id: str, body: SetPatch) -> dict:
+    data = body.model_dump(exclude_unset=True)
+    fields = []
+    values: list[Any] = []
+    for key, val in data.items():
+        if key == "artists":
+            fields.append("artists_json = ?")
+            values.append(json.dumps(val or []))
+            continue
+        fields.append(f"{key} = ?")
+        values.append(val.strip() if isinstance(val, str) else val)
+    with db() as conn:
+        row = conn.execute("SELECT * FROM sets WHERE id = ?", (set_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "set not found")
+        if fields:
+            conn.execute(f"UPDATE sets SET {', '.join(fields)} WHERE id = ?", values + [set_id])
+            row = conn.execute("SELECT * FROM sets WHERE id = ?", (set_id,)).fetchone()
+        return shape_set(row)
+
+
+@app.delete("/sets/{set_id}", status_code=204)
+def delete_set(set_id: str) -> None:
+    with db() as conn:
+        if conn.execute("DELETE FROM sets WHERE id = ?", (set_id,)).rowcount == 0:
+            raise HTTPException(404, "set not found")
 
 
 def rank(pairs: list[tuple[str, object]]) -> list[dict]:

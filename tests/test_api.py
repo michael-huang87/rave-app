@@ -321,3 +321,418 @@ def test_multi_day_events_are_festivals(client):
 def test_days_defaults_to_one_for_a_hand_added_event(client):
     created = client.post("/events", json={"show": "One Nighter", "start_date": "2026-09-05"}).json()
     assert created["days"] == 1
+
+
+@needs_snapshot
+def test_event_log_runs_in_set_order_within_each_night(client):
+    """The sheet lists a night newest-first, so the event log has to read back the other way."""
+    by_id = {s["id"]: s.get("sheet_row") for s in snapshot(SETS_SNAPSHOT)}
+    for event in client.get("/events").json():
+        sets = client.get(f"/events/{event['id']}").json()["sets"]
+        dates = [s["date"] for s in sets]
+        if len(set(dates)) > 1:
+            break
+    else:
+        pytest.skip("snapshot has no multi-day event")
+
+    assert dates == sorted(dates), "nights should run earliest-first"
+    for day in sorted(set(dates)):
+        rows = [by_id[s["id"]] for s in sets if s["date"] == day]
+        assert rows == sorted(rows, reverse=True), f"{day} is still in sheet order"
+
+
+@needs_snapshot
+def test_hand_logged_set_closes_its_night_in_the_event_log(client):
+    """A set logged in the app has no sheet_row; it is the latest thing seen, so it goes last."""
+    event = next(e for e in client.get("/events").json() if e["sets_logged"])
+    day = client.get(f"/events/{event['id']}").json()["sets"][0]["date"]
+
+    client.post(
+        f"/events/{event['id']}/sets",
+        json={"title": "AAA Encore", "artists": ["AAA Encore"], "date": day},
+    )
+    night = [s["title"] for s in client.get(f"/events/{event['id']}").json()["sets"] if s["date"] == day]
+    assert night[-1] == "AAA Encore", night
+
+
+def test_bulk_add_creates_one_set_per_artist_in_order(client):
+    eid = client.post(
+        "/events", json={"show": "Bulk Night", "venue": "The Midway", "start_date": "2026-03-01"}
+    ).json()["id"]
+    posted = ["Zeds Dead", "Alison Wonderland", "Barely Alive"]
+
+    r = client.post(f"/events/{eid}/sets/bulk", json={"artists": posted + ["   "]})
+    assert r.status_code == 201
+    assert [s["title"] for s in r.json()["created"]] == posted
+    assert r.json()["skipped"] == [], "a blank line is dropped, not reported"
+    assert r.json()["created"][0]["venue"] == "The Midway"
+
+    detail = client.get(f"/events/{eid}").json()
+    assert detail["sets_logged"] == 3
+    assert [s["title"] for s in detail["sets"]] == posted, "the pasted order is the order of the night"
+
+
+def test_bulk_add_splits_b2b_into_artists(client):
+    eid = client.post("/events", json={"show": "B2B Night", "start_date": "2026-03-02"}).json()["id"]
+
+    created = client.post(
+        f"/events/{eid}/sets/bulk", json={"artists": ["Excision b2b SLANDER"]}
+    ).json()["created"]
+    assert len(created) == 1, "a back-to-back is one set, not two"
+    assert created[0]["title"] == "Excision b2b SLANDER"
+    assert created[0]["artists"] == ["Excision", "SLANDER"]
+
+
+def test_bulk_add_is_idempotent(client):
+    eid = client.post("/events", json={"show": "Repaste Night", "start_date": "2026-03-03"}).json()["id"]
+    posted = ["Excision", "SVDDEN DEATH"]
+    assert len(client.post(f"/events/{eid}/sets/bulk", json={"artists": posted}).json()["created"]) == 2
+
+    repasted = ["  excision  ", "SVDDEN DEATH", "Peekaboo"]
+    again = client.post(f"/events/{eid}/sets/bulk", json={"artists": repasted}).json()
+    assert [s["title"] for s in again["created"]] == ["Peekaboo"]
+    assert again["skipped"] == repasted[:2], "case and spacing are not a different artist"
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 3, "only the new name landed"
+
+
+def test_patch_and_delete_a_set(client):
+    eid = client.post("/events", json={"show": "Edit Night", "start_date": "2026-03-04"}).json()["id"]
+    sid = client.post(f"/events/{eid}/sets", json={"title": "Wrong Name"}).json()["id"]
+
+    renamed = client.patch(
+        f"/sets/{sid}", json={"title": "Right Name b2b Guest", "artists": ["Right Name", "Guest"]}
+    )
+    assert renamed.status_code == 200
+    assert client.get(f"/events/{eid}").json()["sets"] == [renamed.json()]
+
+    moved = client.patch(f"/sets/{sid}", json={"date": "2026-03-05"}).json()
+    assert moved["date"] == "2026-03-05"
+    assert moved["artists"] == ["Right Name", "Guest"], "a date edit never re-derives artists"
+    assert client.patch(f"/sets/{sid}", json={"artists": None}).json()["artists"] == []
+
+    assert client.delete(f"/sets/{sid}").status_code == 204
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 0
+
+
+def test_logging_the_same_set_twice_gets_distinct_ids(client):
+    eid = client.post("/events", json={"show": "Encore Night", "start_date": "2026-03-06"}).json()["id"]
+    body = {"title": "Subtronics", "artists": ["Subtronics"], "date": "2026-03-06"}
+
+    first = client.post(f"/events/{eid}/sets", json=body)
+    second = client.post(f"/events/{eid}/sets", json=body)
+    assert (first.status_code, second.status_code) == (201, 201)
+    assert first.json()["id"] != second.json()["id"], "a repeated title used to collide on the id hash"
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 2
+
+
+def test_bulk_add_is_idempotent_on_an_undated_event(client):
+    eid = client.post("/events", json={"show": "Undated Night"}).json()["id"]
+    posted = ["Subtronics", "Alvyn"]
+    assert len(client.post(f"/events/{eid}/sets/bulk", json={"artists": posted}).json()["created"]) == 2
+
+    again = client.post(f"/events/{eid}/sets/bulk", json={"artists": posted}).json()
+    assert again["created"] == [], "SQL = never matches NULL, so an undated night used to re-add the list"
+    assert again["skipped"] == posted
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 2
+
+
+def _festival(client, show="Schedule Fest", start="2026-09-18"):
+    return client.post("/events", json={"show": show, "start_date": start, "end_date": "2026-09-19"}).json()["id"]
+
+
+def test_schedule_upload_orders_a_night_across_stages(client):
+    eid = _festival(client)
+    r = client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "Cosmic Meadow", "title": "Alvyn", "start_time": "23:00"},
+                {"day": "2026-09-18", "stage": "Prehistoric Paradox", "title": "Excision b2b SLANDER", "start_time": "22:30", "end_time": "23:45"},
+                {"day": "2026-09-18", "stage": "Cosmic Meadow", "title": "Peekaboo", "start_time": "21:00"},
+            ]
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {"event_id": eid, "days": ["2026-09-18"], "count": 3}
+
+    slots = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["title"] for s in slots] == ["Peekaboo", "Excision b2b SLANDER", "Alvyn"]
+    assert [s["sort_index"] for s in slots] == [0, 1, 2]
+    assert slots[1]["artists"] == ["Excision", "SLANDER"]
+    assert all(s["seen"] is False and s["set_id"] is None for s in slots)
+
+
+def test_schedule_late_night_sets_close_their_day(client):
+    """A festival day runs past midnight, so 01:30 is the end of the night, not the start."""
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "Wasteland", "title": "Closer", "start_time": "01:30"},
+                {"day": "2026-09-18", "stage": "Wasteland", "title": "Opener", "start_time": "23:00"},
+                {"day": "2026-09-19", "stage": "Wasteland", "title": "Next Night", "start_time": "22:00"},
+            ]
+        },
+    )
+    slots = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["title"] for s in slots] == ["Opener", "Closer", "Next Night"]
+    assert [s["day"] for s in slots] == ["2026-09-18", "2026-09-18", "2026-09-19"]
+
+
+def test_schedule_upload_replaces_rather_than_appends(client):
+    eid = _festival(client)
+    first = [
+        {"day": "2026-09-18", "stage": "Main", "title": "Kept", "start_time": "22:00"},
+        {"day": "2026-09-18", "stage": "Main", "title": "Dropped", "start_time": "23:00"},
+    ]
+    assert client.put(f"/events/{eid}/schedule", json={"slots": first}).json()["count"] == 2
+
+    second = [{"day": "2026-09-18", "stage": "Main", "title": "Kept", "start_time": "22:00"}]
+    assert client.put(f"/events/{eid}/schedule", json={"slots": second}).json()["count"] == 1
+    slots = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["title"] for s in slots] == ["Kept"], "a corrected upload replaces, it does not append"
+    assert [s["sort_index"] for s in slots] == [0]
+
+    assert client.put(f"/events/{eid}/schedule", json={"slots": []}).json()["count"] == 0
+    cleared = client.get(f"/events/{eid}/schedule").json()
+    assert cleared == {"event_id": eid, "days": [], "slots": []}
+
+
+def test_schedule_rejects_a_malformed_row(client):
+    eid = _festival(client)
+    good = [{"day": "2026-09-18", "stage": "Main", "title": "Alvyn", "start_time": "22:00"}]
+    client.put(f"/events/{eid}/schedule", json={"slots": good})
+
+    bad_day = client.put(
+        f"/events/{eid}/schedule",
+        json={"slots": good + [{"day": "18/09/2026", "title": "Nope", "start_time": "22:00"}]},
+    )
+    assert bad_day.status_code == 422
+    assert "18/09/2026" in bad_day.json()["detail"]
+
+    bad_time = client.put(
+        f"/events/{eid}/schedule",
+        json={"slots": good + [{"day": "2026-09-18", "title": "Nope", "start_time": "10pm"}]},
+    )
+    assert bad_time.status_code == 422
+    assert "10pm" in bad_time.json()["detail"]
+
+    blank = client.put(
+        f"/events/{eid}/schedule", json={"slots": [{"day": "2026-09-18", "title": "   "}]}
+    )
+    assert blank.status_code == 422
+
+    kept = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["title"] for s in kept] == ["Alvyn"], "a rejected upload leaves the schedule alone"
+    assert client.put("/events/nope/schedule", json={"slots": []}).status_code == 404
+
+
+def test_marking_slots_seen_logs_them_in_schedule_order(client):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "Main", "title": "First", "start_time": "21:00"},
+                {"day": "2026-09-18", "stage": "Main", "title": "Second", "start_time": "23:00"},
+                {"day": "2026-09-18", "stage": "Main", "title": "Third", "start_time": "01:00"},
+            ]
+        },
+    )
+    ids = [s["id"] for s in client.get(f"/events/{eid}/schedule").json()["slots"]]
+
+    marked = client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": list(reversed(ids))})
+    assert marked.status_code == 201
+    assert [s["title"] for s in marked.json()["created"]] == ["First", "Second", "Third"]
+    assert marked.json()["skipped"] == []
+
+    detail = client.get(f"/events/{eid}").json()
+    assert [s["title"] for s in detail["sets"]] == ["First", "Second", "Third"], "tap order is not the night"
+    assert detail["sets_logged"] == 3
+    for s in detail["sets"]:
+        assert s["date"] == "2026-09-18"
+        assert not any("time" in k for k in s), "the log keeps the order, never the clock"
+        assert "01:00" not in json.dumps(s)
+
+
+def test_marking_the_same_slots_seen_twice_is_idempotent(client):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "Main", "title": "Excision b2b SLANDER", "start_time": "22:00"},
+                {"day": "2026-09-18", "stage": "Main", "title": "Peekaboo", "start_time": "23:30"},
+            ]
+        },
+    )
+    ids = [s["id"] for s in client.get(f"/events/{eid}/schedule").json()["slots"]]
+    assert len(client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": ids}).json()["created"]) == 2
+
+    again = client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": ids + ["stale-id"]})
+    assert again.status_code == 201
+    assert again.json()["created"] == []
+    assert again.json()["skipped"] == ["Excision b2b SLANDER", "Peekaboo"]
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 2, "a stale id is dropped, not fatal"
+
+    slots = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert all(s["seen"] is True and s["set_id"] for s in slots)
+    assert slots[0]["artists"] == ["Excision", "SLANDER"]
+
+
+def test_unmarking_a_slot_is_deleting_its_set(client):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={"slots": [{"day": "2026-09-18", "stage": "Main", "title": "Alvyn", "start_time": "22:00"}]},
+    )
+    slot = client.get(f"/events/{eid}/schedule").json()["slots"][0]
+    client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [slot["id"]]})
+
+    marked = client.get(f"/events/{eid}/schedule").json()["slots"][0]
+    assert marked["seen"] is True
+    assert client.delete(f"/sets/{marked['set_id']}").status_code == 204
+
+    unmarked = client.get(f"/events/{eid}/schedule").json()["slots"][0]
+    assert unmarked["seen"] is False and unmarked["set_id"] is None
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 0
+
+
+def _takeovers(client, times=("00:00", "01:00", "02:00", "03:00")):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "The Crater", "title": "Secret Takeover", "start_time": t}
+                for t in times
+            ]
+        },
+    )
+    return eid, client.get(f"/events/{eid}/schedule").json()["slots"]
+
+
+def test_repeated_slot_titles_are_ticked_independently(client):
+    """Lost Lands runs four unnamed takeovers on one stage in one night; they are four sets."""
+    eid, slots = _takeovers(client)
+    assert [s["title"] for s in slots] == ["Secret Takeover"] * 4
+
+    marked = client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [s["id"] for s in slots]})
+    assert marked.status_code == 201
+    assert len(marked.json()["created"]) == 4
+    assert marked.json()["skipped"] == []
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 4
+
+    after = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert all(s["seen"] is True for s in after)
+    assert len({s["set_id"] for s in after}) == 4
+
+    again = client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [s["id"] for s in slots]})
+    assert again.json()["created"] == []
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 4
+
+
+def test_ticking_one_of_several_identical_slots_leaves_the_others_open(client):
+    eid, slots = _takeovers(client)
+    client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [slots[1]["id"]]})
+
+    after = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["seen"] for s in after].count(True) == 1
+    assert [s["seen"] for s in after].count(False) == 3
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 1
+
+
+def test_a_hand_logged_set_claims_only_one_matching_slot(client):
+    """Typed by hand there is no slot to point at, so it lights the first one and stops there."""
+    eid, slots = _takeovers(client, times=("00:00", "01:00"))
+    bulk = client.post(
+        f"/events/{eid}/sets/bulk", json={"artists": ["Secret Takeover"], "date": "2026-09-18"}
+    )
+    assert len(bulk.json()["created"]) == 1
+
+    after = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["seen"] for s in after] == [True, False]
+    assert after[0]["set_id"] == bulk.json()["created"][0]["id"]
+
+
+def test_a_parenthetical_qualifier_is_not_part_of_the_artist(client):
+    """The sheet keeps "(2 Hour Set)" in the title and the clean name in ARTISTS."""
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "Wompy Woods", "title": "Excision (2 Hour Set)", "start_time": "22:00"},
+                {"day": "2026-09-18", "stage": "Wompy Woods", "title": "Funtcase b2b Doctor P (DNB Set)", "start_time": "23:00"},
+            ]
+        },
+    )
+    slots = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert slots[0]["title"] == "Excision (2 Hour Set)"
+    assert slots[0]["artists"] == ["Excision"]
+    assert slots[1]["title"] == "Funtcase b2b Doctor P (DNB Set)"
+    assert slots[1]["artists"] == ["Funtcase", "Doctor P"]
+
+    before = {a["name"]: a["count"] for a in client.get("/stats").json()["artists"]}
+    client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [s["id"] for s in slots]})
+    logged = client.get(f"/events/{eid}").json()["sets"]
+    assert [s["title"] for s in logged] == ["Excision (2 Hour Set)", "Funtcase b2b Doctor P (DNB Set)"]
+
+    artists = {a["name"]: a["count"] for a in client.get("/stats").json()["artists"]}
+    assert artists["Excision"] == before.get("Excision", 0) + 1
+    assert artists["Doctor P"] == before.get("Doctor P", 0) + 1
+    assert not any(
+        name in artists
+        for name in ("Excision (2 Hour Set)", "Doctor P (DNB Set)", "Funtcase b2b Doctor P (DNB Set)")
+    )
+
+
+def test_slot_minutes_put_a_late_set_after_an_early_one(client):
+    """The stage grid lays a night out on one axis, so 01:30 sits past 14:00 rather than before it."""
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "Wasteland", "title": "Closer", "start_time": "01:30"},
+                {"day": "2026-09-18", "stage": "Wasteland", "title": "Opener", "start_time": "14:00"},
+            ]
+        },
+    )
+    slots = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["title"] for s in slots] == ["Opener", "Closer"]
+    assert slots[1]["start_minute"] > slots[0]["start_minute"]
+    assert [s["start_minute"] for s in slots] == [480, 1170]
+    assert [s["sort_index"] for s in slots] == [0, 1]
+
+
+def test_a_block_crossing_midnight_has_a_positive_length(client):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {
+                    "day": "2026-09-18",
+                    "stage": "Prehistoric Paradox",
+                    "title": "Excision",
+                    "start_time": "23:00",
+                    "end_time": "00:30",
+                }
+            ]
+        },
+    )
+    slot = client.get(f"/events/{eid}/schedule").json()["slots"][0]
+    assert slot["end_minute"] - slot["start_minute"] == 90
+
+
+def test_a_slot_without_a_start_time_has_no_minutes(client):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={"slots": [{"day": "2026-09-18", "stage": "Wompy Woods", "title": "TBA"}]},
+    )
+    slot = client.get(f"/events/{eid}/schedule").json()["slots"][0]
+    assert slot["start_minute"] is None
+    assert slot["end_minute"] is None
