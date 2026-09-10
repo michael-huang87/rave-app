@@ -10,8 +10,8 @@ Users record a DJ set they saw at a show: title (supports b2b in the title strin
 
 ## How to get to it (user POV)
 
-- Show detail → **Log set** → `LogSetView`.
-- API: `POST /events/{id}/sets`.
+- Show detail → **Add artists** → `QuickAddSetsView` for entering a night's list, and tapping a set row → `EditSetView` for correcting one. See [Quick-add artists](./quick-add-artists.md) for both.
+- API: `POST /events/{id}/sets`. The app itself now posts `POST /events/{id}/sets/bulk`; this single-set route stays for one-off and scripted logging.
 
 ## Driving it with curl
 
@@ -31,6 +31,6 @@ Preconditions:
 
 ## Gotchas
 
-- If `artists` omitted, defaults to `[title]`.
-- Duplicate titles on same event get distinct ids (hash includes title + date + artist count).
+- If `artists` is omitted, the title is split on ` b2b ` and falls back to `[title]`.
+- The id hashes title + date + artist count, so an identical repeat set collides. The server re-hashes with an incrementing discriminator until the id is free, so posting the same body twice yields two rows with different ids rather than a 500.
 - Logging sets on a past-dated event can flip `status` to `attended` when end date ≤ as_of.

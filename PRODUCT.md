@@ -50,7 +50,12 @@ days** (the sheet's `COUNTUNIQUEIFS` over `Sets[Date]`, not a count of events).
 ## Screens
 
 Shows list (by month, filter planned / went / skipped) → show detail (dates, venue, city, spend, sets)
-→ add/edit show, log a set, log spend. Sets tab, Stats tab, Recap tab. Single user.
+→ add/edit show, add artists, log spend. Sets tab, Stats tab, Recap tab. Single user.
+
+Adding sets is two moves, because a festival night is a list you type fast and fix later. **Add
+artists** takes a list of names for one night, suggests names already in your data, and makes one set
+per name. Tapping a set opens it for correction: rename it into a b2b, fix the artists or the date,
+or delete it. Re-typing a night you already entered adds nothing.
 
 The Shows list runs newest-first, except under **Planned**, where it flips to soonest-first — the
 next show is the one that matters.
