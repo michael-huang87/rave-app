@@ -144,3 +144,37 @@ Replace `100.x.x.x` with the output of `tailscale ip -4`. Rebuild and run on you
 Your Mac must be awake and online. Tailscale on the phone must be connected (VPN icon in status bar).
 
 **Verify from the phone:** open Safari and visit `http://100.x.x.x:8000/health` — you should see `{"ok":true}`.
+
+### Installing a build to a phone that is not here
+
+Tailscale lets the running app reach the API from anywhere. It does **not** let Xcode install a
+build: with the phone online on the tailnet, `xcrun devicectl list devices` still reports it
+`unavailable`. iOS 17+ discovers phones through Bonjour, which is link-local multicast and cannot
+cross a WireGuard tunnel.
+
+`scripts/coredevice-tailnet.sh` works around that. It fabricates the phone's Bonjour record on this
+Mac and points it at the Mac's **own** en0 address, where `socat` forwards the CoreDevice ports to
+the phone's tailnet IP. The record has to name en0 rather than the tailnet address, because
+`remotepairingd` scopes its connection to the local interface and refuses a tunnel-scoped peer.
+
+```bash
+brew install socat
+bash scripts/coredevice-tailnet.sh status        # preflight
+bash scripts/coredevice-tailnet.sh capture       # ONCE, phone on USB or this wifi
+bash scripts/coredevice-tailnet.sh bridge        # then, with the phone anywhere
+```
+
+`capture` is the step that needs the phone present, because it reads the real advertisement the
+bridge later replays. After that the phone can be on cellular in another country.
+
+Run `bridge` while installing rather than leaving it up. Each proxied port costs a `socat` pair at
+about 2.1MB, so the default 55100-55130 range holds roughly 130MB. The trusted tunnel picks its port
+per session, so widen with `COREDEVICE_PORT_LO` / `COREDEVICE_PORT_HI` if an install cannot connect.
+`install-agent` will run it at login if you would rather pay the memory than remember the command.
+
+Two things to know. The listeners bind to the Mac's LAN address, so anything on your home network
+can reach the phone's developer services while the bridge is up. And this leans on Apple's private
+discovery stack, so an OS update can break it; nothing here is a supported interface.
+
+Method credit: [How to remotely iterate & deploy your sideloaded iOS apps over
+tailnet](https://dev.to/kvnpt/how-to-remotely-iterate-deploy-your-sideloaded-ios-apps-over-tailnet-jak).
