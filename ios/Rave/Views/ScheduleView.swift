@@ -85,6 +85,8 @@ struct ScheduleView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    // "Day 1 · Fri Sep 18" wraps to three lines if the row is allowed to squeeze it.
+                    .fixedSize()
                 }
                 Spacer(minLength: 0)
                 filterMenu
@@ -139,9 +141,15 @@ struct ScheduleView: View {
                 }
             }
         } label: {
-            Label(filterLabel, systemImage: "line.3.horizontal.decrease.circle")
-                .font(.subheadline)
-                .lineLimit(1)
+            // Unfiltered needs no words: the whole day is on screen saying so, and the row has no
+            // room to spare beside the day menu. A filled icon marks the state without relying on it.
+            if filter == .all {
+                Image(systemName: "line.3.horizontal.decrease.circle").font(.subheadline)
+            } else {
+                Label(filterLabel, systemImage: "line.3.horizontal.decrease.circle.fill")
+                    .font(.subheadline)
+                    .lineLimit(1)
+            }
         }
     }
 

@@ -41,6 +41,8 @@ struct ScheduleGridView: View {
                             }
                         }
                     }
+                    // The first hour label is drawn 6pt above the axis and would sit under the header.
+                    .padding(.top, 10)
                     .padding(.bottom, 32)
                 }
             }
