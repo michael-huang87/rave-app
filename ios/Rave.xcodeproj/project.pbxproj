@@ -15,6 +15,7 @@
 		3D391EA81CEF495F86A91B00 /* EventDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E14D6276F7B471B9B85D5D6 /* EventDetailView.swift */; };
 		EF4E60850A1FAB5015E5618C /* QuickAddSetsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5DF72350CB4AA6213B970F0 /* QuickAddSetsView.swift */; };
 		BC03930A1C2D3B04830B3F08 /* EditSetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE2BF303729EAFC5A20E46D /* EditSetView.swift */; };
+		F2230FBB7383FB4FAE5F0FFE /* ScheduleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFAD9F5F70FD993CA103F0A0 /* ScheduleView.swift */; };
 		6DF7EBE739FD43AA9F515AAA /* RaveModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E79CE84A3A4450848D5ADE /* RaveModels.swift */; };
 		87AFB6054A7943A5BDA4E94F /* EventFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E27DE59E550497ABA8BFACD /* EventFormView.swift */; };
 		8B2463E3544B4C46B7616070 /* RaveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7904AD9601D845688D4A6190 /* RaveApp.swift */; };
@@ -33,6 +34,7 @@
 		8E14D6276F7B471B9B85D5D6 /* EventDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDetailView.swift; sourceTree = "<group>"; };
 		8E23B85CA7164EA7A3A38AA7 /* LogSpendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSpendView.swift; sourceTree = "<group>"; };
 		A5DF72350CB4AA6213B970F0 /* QuickAddSetsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickAddSetsView.swift; sourceTree = "<group>"; };
+		FFAD9F5F70FD993CA103F0A0 /* ScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleView.swift; sourceTree = "<group>"; };
 		6CE2BF303729EAFC5A20E46D /* EditSetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditSetView.swift; sourceTree = "<group>"; };
 		B9991EA08D8442FDB5DE56B1 /* EventListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventListView.swift; sourceTree = "<group>"; };
 		0E8E513D027442908755314D /* SetsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetsListView.swift; sourceTree = "<group>"; };
@@ -99,6 +101,7 @@
 				8E14D6276F7B471B9B85D5D6 /* EventDetailView.swift */,
 				2E27DE59E550497ABA8BFACD /* EventFormView.swift */,
 				A5DF72350CB4AA6213B970F0 /* QuickAddSetsView.swift */,
+				FFAD9F5F70FD993CA103F0A0 /* ScheduleView.swift */,
 				6CE2BF303729EAFC5A20E46D /* EditSetView.swift */,
 				8E23B85CA7164EA7A3A38AA7 /* LogSpendView.swift */,
 				3DED41FCE98941FEA1FE97A4 /* RecapView.swift */,
@@ -194,6 +197,7 @@
 				87AFB6054A7943A5BDA4E94F /* EventFormView.swift in Sources */,
 				EF4E60850A1FAB5015E5618C /* QuickAddSetsView.swift in Sources */,
 				BC03930A1C2D3B04830B3F08 /* EditSetView.swift in Sources */,
+				F2230FBB7383FB4FAE5F0FFE /* ScheduleView.swift in Sources */,
 				C17B7AF61FD94540AA8BDE96 /* LogSpendView.swift in Sources */,
 				38B79B74B08745A48480748B /* RecapView.swift in Sources */,
 				A1B2C3D40001745A48480748 /* StatsView.swift in Sources */,

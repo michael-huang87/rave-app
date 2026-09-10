@@ -209,6 +209,29 @@ struct SetPatch: Codable {
     var date: String?
 }
 
+struct ScheduleSlot: Identifiable, Codable, Hashable {
+    var id: String
+    var day: String
+    var stage: String?
+    var title: String
+    var artists: [String]
+    var startTime: String?
+    var endTime: String?
+    var sortIndex: Int
+    var seen: Bool
+    var setId: String?
+}
+
+struct Schedule: Codable {
+    var eventId: String
+    var days: [String]
+    var slots: [ScheduleSlot]
+}
+
+struct MarkSeenDraft: Codable {
+    var slotIds: [String]
+}
+
 extension Double {
     var usd: String {
         String(format: "$%.2f", self)

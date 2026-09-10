@@ -122,6 +122,14 @@ actor APIClient {
         try await sendNoContent("/sets/\(id)", method: "DELETE")
     }
 
+    func schedule(eventId: String) async throws -> Schedule {
+        try await get("/events/\(eventId)/schedule")
+    }
+
+    func markSlotsSeen(eventId: String, slotIds: [String]) async throws -> BulkSetsResponse {
+        try await send("/events/\(eventId)/schedule/seen", method: "POST", body: MarkSeenDraft(slotIds: slotIds))
+    }
+
     private func makeURL(_ path: String, query: [URLQueryItem] = []) throws -> URL {
         guard var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { throw APIError.badURL }
         comps.path = path.hasPrefix("/") ? path : "/" + path

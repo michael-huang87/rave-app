@@ -7,6 +7,8 @@ struct EventDetailView: View {
     @State private var showSpend = false
     @State private var showAdd = false
     @State private var showEdit = false
+    @State private var showSchedule = false
+    @State private var scheduleSlots = 0
     @State private var editing: SetEntry?
 
     var body: some View {
@@ -46,6 +48,9 @@ struct EventDetailView: View {
         }
         .sheet(isPresented: $showEdit) {
             if let event { EventFormView(existing: event) { await reload() } }
+        }
+        .sheet(isPresented: $showSchedule) {
+            if let event { ScheduleView(event: event) { await reload() } }
         }
         .task { await reload() }
     }
@@ -115,7 +120,17 @@ struct EventDetailView: View {
             HStack {
                 Text(setsTitle(event)).font(.headline)
                 Spacer()
-                Button("Add artists") { showAdd = true }
+                // The long title form plus both buttons overruns the card by 21pt, so a schedule collapses them.
+                if scheduleSlots > 0 {
+                    Menu {
+                        Button("Add artists") { showAdd = true }
+                        Button("Set times") { showSchedule = true }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                } else {
+                    Button("Add artists") { showAdd = true }
+                }
             }
             if let sets = event.sets, !sets.isEmpty {
                 let nights = sets.grouped { $0.date ?? "" }
@@ -159,7 +174,11 @@ struct EventDetailView: View {
 
     @MainActor
     private func reload() async {
-        do { event = try await APIClient.shared.event(id: eventId) }
+        async let loaded = APIClient.shared.event(id: eventId)
+        async let slots = APIClient.shared.schedule(eventId: eventId).slots.count
+        do { event = try await loaded }
         catch { self.error = error.localizedDescription }
+        // Most events never get a schedule, so a failed lookup just leaves the button hidden.
+        scheduleSlots = (try? await slots) ?? 0
     }
 }
