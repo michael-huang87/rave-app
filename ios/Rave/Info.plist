@@ -21,7 +21,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>APIBaseURL</key>
-	<string>http://100.105.205.40:8000</string>
+	<string>http://10.0.0.126:8000</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
@@ -34,6 +34,13 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
+			<key>10.0.0.126</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
 			<key>100.105.205.40</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
