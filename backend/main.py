@@ -86,6 +86,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             date TEXT,
             sheet_row INTEGER,
             slot_index INTEGER,
+            slot_id TEXT,
             artists_json TEXT NOT NULL DEFAULT '[]',
             FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
         );
@@ -110,6 +111,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
         backfill_sheet_rows(conn)
     if "slot_index" not in cols:
         conn.execute("ALTER TABLE sets ADD COLUMN slot_index INTEGER")
+    if "slot_id" not in cols:
+        conn.execute("ALTER TABLE sets ADD COLUMN slot_id TEXT")
 
 
 def backfill_sheet_rows(conn: sqlite3.Connection) -> None:
@@ -144,6 +147,7 @@ DAY_ROLLOVER_HOUR = 6
 
 DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 TIME_RE = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
+QUALIFIER_RE = re.compile(r"\s*\([^()]*\)\s*$")
 
 
 def status_for(show: str, start: str | None, end: str | None) -> str:
@@ -206,9 +210,12 @@ def shape_set(row: sqlite3.Row) -> dict:
 
 
 def split_artists(title: str) -> list[str]:
-    """The sheet writes a back-to-back as one line, so " b2b " is the only artist boundary there is."""
+    """The sheet writes a back-to-back as one line, so " b2b " is the only artist boundary there is.
+    A trailing "(2 Hour Set)" qualifies the set, not the act, and the sheet keeps it in the title
+    and out of ARTISTS. A colon is left alone: "Malaa: Alter Ego" names the artist first and
+    "Fresh Meat: KEEB" names it second, so no rule is right both times."""
     names = [n.strip() for n in re.split(r"\s+b2b\s+", title, flags=re.IGNORECASE) if n.strip()]
-    return names or [title.strip()]
+    return [QUALIFIER_RE.sub("", n).strip() or n for n in names] or [title.strip()]
 
 
 def norm_title(title: str | None) -> str:
@@ -465,6 +472,7 @@ def insert_set(
     date: str | None,
     year: int | None,
     slot_index: int | None = None,
+    slot_id: str | None = None,
 ) -> sqlite3.Row:
     """Seeing the same act twice in a night is legitimate, so a taken id gets a discriminator
     rather than an IntegrityError. The first hash keeps its old inputs so seeded ids do not move."""
@@ -476,8 +484,8 @@ def insert_set(
         n += 1
     conn.execute(
         """INSERT INTO sets
-           (id, event_id, title, show, venue, city, year, date, slot_index, artists_json)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           (id, event_id, title, show, venue, city, year, date, slot_index, slot_id, artists_json)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (
             sid,
             event["id"],
@@ -488,6 +496,7 @@ def insert_set(
             year or event["year"],
             date or event["start_date"],
             slot_index,
+            slot_id,
             json.dumps(artists),
         ),
     )
@@ -601,11 +610,26 @@ def put_schedule(event_id: str, body: ScheduleIn) -> dict:
         }
 
 
-def logged_titles(conn: sqlite3.Connection, event_id: str) -> dict[tuple[str | None, str], str]:
-    return {
-        (r["date"], norm_title(r["title"])): r["id"]
-        for r in conn.execute("SELECT id, date, title FROM sets WHERE event_id = ?", (event_id,))
-    }
+def logged_slots(conn: sqlite3.Connection, event_id: str) -> dict[str, str]:
+    """Which set answers for each slot. A ticked set carries the slot it came from, so four slots
+    titled the same tick apart. A set typed by hand or imported from the sheet carries no slot, so
+    it still lights one up, but only the first slot in running order that it matches."""
+    by_slot: dict[str, str] = {}
+    unclaimed: dict[tuple[str | None, str], list[str]] = {}
+    for r in conn.execute(
+        "SELECT id, date, title, slot_id FROM sets WHERE event_id = ? ORDER BY rowid", (event_id,)
+    ):
+        if r["slot_id"]:
+            by_slot[r["slot_id"]] = r["id"]
+        else:
+            unclaimed.setdefault((r["date"], norm_title(r["title"])), []).append(r["id"])
+    for r in conn.execute(
+        "SELECT id, day, title FROM schedule_slots WHERE event_id = ? ORDER BY sort_index", (event_id,)
+    ):
+        pool = unclaimed.get((r["day"], norm_title(r["title"])))
+        if pool and r["id"] not in by_slot:
+            by_slot[r["id"]] = pool.pop(0)
+    return by_slot
 
 
 @app.get("/events/{event_id}/schedule")
@@ -613,12 +637,12 @@ def get_schedule(event_id: str) -> dict:
     with db() as conn:
         if not conn.execute("SELECT 1 FROM events WHERE id = ?", (event_id,)).fetchone():
             raise HTTPException(404, "event not found")
-        logged = logged_titles(conn, event_id)
+        logged = logged_slots(conn, event_id)
         slots = []
         for r in conn.execute(
             "SELECT * FROM schedule_slots WHERE event_id = ? ORDER BY sort_index", (event_id,)
         ):
-            set_id = logged.get((r["day"], norm_title(r["title"])))
+            set_id = logged.get(r["id"])
             slots.append(
                 {
                     "id": r["id"],
@@ -653,18 +677,24 @@ def mark_slots_seen(event_id: str, body: SlotsSeenIn) -> dict:
             if body.slot_ids
             else []
         )
-        logged = logged_titles(conn, event_id)
+        logged = logged_slots(conn, event_id)
         created: list[dict] = []
         skipped: list[str] = []
         for r in rows:
-            key = (r["day"], norm_title(r["title"]))
-            if key in logged:
+            if r["id"] in logged:
                 skipped.append(r["title"])
                 continue
             row = insert_set(
-                conn, event, r["title"], split_artists(r["title"]), r["day"], None, r["sort_index"]
+                conn,
+                event,
+                r["title"],
+                split_artists(r["title"]),
+                r["day"],
+                None,
+                r["sort_index"],
+                r["id"],
             )
-            logged[key] = row["id"]
+            logged[r["id"]] = row["id"]
             created.append(shape_set(row))
         return {"created": created, "skipped": skipped}
 

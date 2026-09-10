@@ -69,6 +69,14 @@ Preconditions:
 - PUT replaces. There is no PATCH and no DELETE; `{"slots": []}` is how you clear a schedule.
 - Slot ids are derived from event, day, stage, title and start time, so re-uploading an unchanged
   schedule keeps the same ids and the `seen` flags still line up.
+- A ticked set records `sets.slot_id`, which is what lets four slots all titled "Secret Takeover" on
+  one night be ticked apart. A set typed through **Add artists** or imported from the sheet has no
+  `slot_id`, so it still lights up a slot it matches by `(date, title)`, but it can only claim one,
+  and the first in running order wins.
+- `split_artists` drops a trailing parenthetical when deriving artists, so
+  `Excision (2 Hour Set)` keeps its title and counts as `Excision` in `/stats` and the recap. A colon
+  is deliberately left alone, since the sheet's `Malaa: Alter Ego` names the artist first and a
+  lineup's `Fresh Meat: KEEB` names it second.
 - Unknown slot ids in a `seen` call are ignored rather than fatal, because a client can hold ids from
   a schedule that has since been replaced.
 - `sets.slot_index` carries the order and is null for every row that predates this. It sorts after

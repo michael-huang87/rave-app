@@ -597,3 +597,92 @@ def test_unmarking_a_slot_is_deleting_its_set(client):
     unmarked = client.get(f"/events/{eid}/schedule").json()["slots"][0]
     assert unmarked["seen"] is False and unmarked["set_id"] is None
     assert client.get(f"/events/{eid}").json()["sets_logged"] == 0
+
+
+def _takeovers(client, times=("00:00", "01:00", "02:00", "03:00")):
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "The Crater", "title": "Secret Takeover", "start_time": t}
+                for t in times
+            ]
+        },
+    )
+    return eid, client.get(f"/events/{eid}/schedule").json()["slots"]
+
+
+def test_repeated_slot_titles_are_ticked_independently(client):
+    """Lost Lands runs four unnamed takeovers on one stage in one night; they are four sets."""
+    eid, slots = _takeovers(client)
+    assert [s["title"] for s in slots] == ["Secret Takeover"] * 4
+
+    marked = client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [s["id"] for s in slots]})
+    assert marked.status_code == 201
+    assert len(marked.json()["created"]) == 4
+    assert marked.json()["skipped"] == []
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 4
+
+    after = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert all(s["seen"] is True for s in after)
+    assert len({s["set_id"] for s in after}) == 4
+
+    again = client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [s["id"] for s in slots]})
+    assert again.json()["created"] == []
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 4
+
+
+def test_ticking_one_of_several_identical_slots_leaves_the_others_open(client):
+    eid, slots = _takeovers(client)
+    client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [slots[1]["id"]]})
+
+    after = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["seen"] for s in after].count(True) == 1
+    assert [s["seen"] for s in after].count(False) == 3
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 1
+
+
+def test_a_hand_logged_set_claims_only_one_matching_slot(client):
+    """Typed by hand there is no slot to point at, so it lights the first one and stops there."""
+    eid, slots = _takeovers(client, times=("00:00", "01:00"))
+    bulk = client.post(
+        f"/events/{eid}/sets/bulk", json={"artists": ["Secret Takeover"], "date": "2026-09-18"}
+    )
+    assert len(bulk.json()["created"]) == 1
+
+    after = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert [s["seen"] for s in after] == [True, False]
+    assert after[0]["set_id"] == bulk.json()["created"][0]["id"]
+
+
+def test_a_parenthetical_qualifier_is_not_part_of_the_artist(client):
+    """The sheet keeps "(2 Hour Set)" in the title and the clean name in ARTISTS."""
+    eid = _festival(client)
+    client.put(
+        f"/events/{eid}/schedule",
+        json={
+            "slots": [
+                {"day": "2026-09-18", "stage": "Wompy Woods", "title": "Excision (2 Hour Set)", "start_time": "22:00"},
+                {"day": "2026-09-18", "stage": "Wompy Woods", "title": "Funtcase b2b Doctor P (DNB Set)", "start_time": "23:00"},
+            ]
+        },
+    )
+    slots = client.get(f"/events/{eid}/schedule").json()["slots"]
+    assert slots[0]["title"] == "Excision (2 Hour Set)"
+    assert slots[0]["artists"] == ["Excision"]
+    assert slots[1]["title"] == "Funtcase b2b Doctor P (DNB Set)"
+    assert slots[1]["artists"] == ["Funtcase", "Doctor P"]
+
+    before = {a["name"]: a["count"] for a in client.get("/stats").json()["artists"]}
+    client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [s["id"] for s in slots]})
+    logged = client.get(f"/events/{eid}").json()["sets"]
+    assert [s["title"] for s in logged] == ["Excision (2 Hour Set)", "Funtcase b2b Doctor P (DNB Set)"]
+
+    artists = {a["name"]: a["count"] for a in client.get("/stats").json()["artists"]}
+    assert artists["Excision"] == before.get("Excision", 0) + 1
+    assert artists["Doctor P"] == before.get("Doctor P", 0) + 1
+    assert not any(
+        name in artists
+        for name in ("Excision (2 Hour Set)", "Doctor P (DNB Set)", "Funtcase b2b Doctor P (DNB Set)")
+    )
