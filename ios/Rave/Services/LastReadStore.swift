@@ -2,6 +2,8 @@ import Foundation
 
 /// On-disk last successful GET. Lives in Application Support so iOS does not
 /// evict it the way it can evict Caches. Envelope: `{ saved_at, payload }`.
+/// Screens read `shared` in `init` so a previously loaded payload paints before
+/// the background GET. A spinner is only for a key that has never been saved.
 struct LastReadEnvelope<T: Codable>: Codable {
     var savedAt: Date
     var payload: T
@@ -35,6 +37,8 @@ struct ReadResult<T> {
 }
 
 struct LastReadStore {
+    static let shared = LastReadStore()
+
     let directory: URL
 
     private let encoder: JSONEncoder = {

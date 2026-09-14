@@ -7,6 +7,14 @@ struct StatsView: View {
     @State private var error: String?
     @State private var fromCache = false
     @State private var cachedAt: Date?
+    @State private var refreshing: Bool
+
+    init() {
+        let hit = LastReadStore.shared.load(Stats.self, key: .stats)
+        _stats = State(initialValue: hit?.payload)
+        _cachedAt = State(initialValue: hit?.savedAt)
+        _refreshing = State(initialValue: hit != nil)
+    }
 
     private static let preview = 10
 
@@ -36,7 +44,7 @@ struct StatsView: View {
             .background(RaveTheme.bg)
             .navigationTitle("Stats")
             .safeAreaInset(edge: .top, spacing: 0) {
-                if fromCache { OfflineBanner(cachedAt: cachedAt) }
+                CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
             }
             .task { await load() }
             .refreshable { await load() }
@@ -65,14 +73,26 @@ struct StatsView: View {
 
     @MainActor
     private func load() async {
+        if stats == nil, let hit = LastReadStore.shared.load(Stats.self, key: .stats) {
+            stats = hit.payload
+            cachedAt = hit.savedAt
+            fromCache = false
+            refreshing = true
+            error = nil
+        } else {
+            refreshing = stats != nil
+        }
         do {
             let read = try await APIClient.shared.stats()
             stats = read.value
             fromCache = read.fromCache
             cachedAt = read.cachedAt
             error = nil
+            refreshing = false
         } catch {
-            self.error = error.localizedDescription
+            self.error = stats == nil ? error.localizedDescription : nil
+            if stats != nil { fromCache = true }
+            refreshing = false
         }
     }
 }

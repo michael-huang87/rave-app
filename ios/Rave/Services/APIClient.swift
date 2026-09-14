@@ -42,7 +42,7 @@ actor APIClient {
 
     private let store: LastReadStore
 
-    private init(store: LastReadStore = LastReadStore()) {
+    private init(store: LastReadStore = .shared) {
         baseURL = Self.resolveBaseURL()
         self.store = store
     }
@@ -151,6 +151,8 @@ actor APIClient {
         return url
     }
 
+    /// Network refresh for a last-read key. Screens paint `LastReadStore.shared` first so this
+    /// wait never gates the UI when a cache already exists. On failure, serve that cache.
     private func cachedGet<T: Codable>(_ path: String, query: [URLQueryItem] = [], key: LastReadKey) async throws -> ReadResult<T> {
         do {
             let live: T = try await get(path, query: query)

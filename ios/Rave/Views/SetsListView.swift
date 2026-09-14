@@ -1,12 +1,21 @@
 import SwiftUI
 
 struct SetsListView: View {
-    @State private var sets: [SetEntry] = []
+    @State private var sets: [SetEntry]
     @State private var query = ""
     @State private var error: String?
-    @State private var loading = true
+    @State private var loading: Bool
     @State private var fromCache = false
     @State private var cachedAt: Date?
+    @State private var refreshing: Bool
+
+    init() {
+        let hit = LastReadStore.shared.load([SetEntry].self, key: .sets)
+        _sets = State(initialValue: hit?.payload ?? [])
+        _loading = State(initialValue: hit == nil)
+        _cachedAt = State(initialValue: hit?.savedAt)
+        _refreshing = State(initialValue: hit != nil)
+    }
 
     var body: some View {
         NavigationStack {
@@ -30,7 +39,7 @@ struct SetsListView: View {
             .navigationTitle("Sets")
             .searchable(text: $query, prompt: "Artist, set, show, or venue")
             .safeAreaInset(edge: .top, spacing: 0) {
-                if fromCache { OfflineBanner(cachedAt: cachedAt) }
+                CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
             }
             .task { await reload() }
             .refreshable { await reload() }
@@ -106,7 +115,18 @@ struct SetsListView: View {
 
     @MainActor
     private func reload() async {
-        loading = sets.isEmpty
+        if sets.isEmpty, let hit = LastReadStore.shared.load([SetEntry].self, key: .sets) {
+            sets = hit.payload
+            cachedAt = hit.savedAt
+            fromCache = false
+            loading = false
+            refreshing = true
+        } else if sets.isEmpty {
+            loading = true
+            refreshing = false
+        } else {
+            refreshing = true
+        }
         error = nil
         do {
             let read = try await APIClient.shared.sets()
@@ -115,9 +135,12 @@ struct SetsListView: View {
             cachedAt = read.cachedAt
             error = nil
             loading = false
+            refreshing = false
         } catch {
-            self.error = error.localizedDescription
+            self.error = sets.isEmpty ? error.localizedDescription : nil
+            if !sets.isEmpty { fromCache = true }
             loading = false
+            refreshing = false
         }
     }
 }
