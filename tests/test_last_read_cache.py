@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from last_read_cache import filename, load, save
+import pytest
+
+from last_read_cache import cache_first_refresh, filename, load, save
 
 
 def test_filename_keys():
@@ -56,3 +58,47 @@ def test_list_and_recap_keys(tmp_path: Path):
     assert load(tmp_path, "events")["payload"][0]["id"] == "1"
     assert load(tmp_path, "recap")["payload"]["all_time"]["sets"] == 3
     assert load(tmp_path, "stats")["payload"]["artists"][0]["name"] == "Subtronics"
+
+
+def test_cache_first_paints_then_replaces_on_success(tmp_path: Path):
+    save(tmp_path, "events", [{"id": "1", "show": "Cached"}])
+    result = cache_first_refresh(
+        tmp_path, "events", live=[{"id": "1", "show": "Live"}]
+    )
+    assert result["loading"] is False
+    assert result["immediate"][0]["show"] == "Cached"
+    assert result["final"][0]["show"] == "Live"
+    assert result["from_cache"] is False
+    assert load(tmp_path, "events")["payload"][0]["show"] == "Live"
+
+
+def test_cache_first_keeps_cache_when_refresh_fails(tmp_path: Path):
+    save(tmp_path, "recap", {"all_time": {"sets": 9}})
+    result = cache_first_refresh(tmp_path, "recap", fail=True)
+    assert result["loading"] is False
+    assert result["immediate"]["all_time"]["sets"] == 9
+    assert result["final"]["all_time"]["sets"] == 9
+    assert result["from_cache"] is True
+    assert load(tmp_path, "recap")["payload"]["all_time"]["sets"] == 9
+
+
+def test_cache_first_spinner_only_without_cache(tmp_path: Path):
+    result = cache_first_refresh(tmp_path, "stats", live={"artists": []})
+    assert result["loading"] is True
+    assert result["immediate"] is None
+    assert result["final"] == {"artists": []}
+    assert result["from_cache"] is False
+
+
+def test_cache_first_no_cache_and_fail_is_error(tmp_path: Path):
+    with pytest.raises(FileNotFoundError):
+        cache_first_refresh(tmp_path, "event", fail=True, event_id="missing")
+
+
+def test_cache_first_event_detail_key(tmp_path: Path):
+    save(tmp_path, "event", {"id": "e1", "show": "Old"}, event_id="e1")
+    result = cache_first_refresh(
+        tmp_path, "event", live={"id": "e1", "show": "New"}, event_id="e1"
+    )
+    assert result["immediate"]["show"] == "Old"
+    assert result["final"]["show"] == "New"

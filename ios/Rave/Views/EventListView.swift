@@ -1,13 +1,22 @@
 import SwiftUI
 
 struct EventListView: View {
-    @State private var events: [Event] = []
+    @State private var events: [Event]
     @State private var filter: EventStatus? = nil
     @State private var error: String?
-    @State private var loading = true
+    @State private var loading: Bool
     @State private var showAdd = false
     @State private var fromCache = false
     @State private var cachedAt: Date?
+    @State private var refreshing: Bool
+
+    init() {
+        let hit = LastReadStore.shared.load([Event].self, key: .events)
+        _events = State(initialValue: hit?.payload ?? [])
+        _loading = State(initialValue: hit == nil)
+        _cachedAt = State(initialValue: hit?.savedAt)
+        _refreshing = State(initialValue: hit != nil)
+    }
 
     var body: some View {
         NavigationStack {
@@ -38,7 +47,7 @@ struct EventListView: View {
                 EventFormView { await reload() }
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                if fromCache { OfflineBanner(cachedAt: cachedAt) }
+                CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
             }
             .task { await reload() }
             .refreshable { await reload() }
@@ -122,7 +131,18 @@ struct EventListView: View {
 
     @MainActor
     private func reload() async {
-        loading = events.isEmpty
+        if events.isEmpty, let hit = LastReadStore.shared.load([Event].self, key: .events) {
+            events = hit.payload
+            cachedAt = hit.savedAt
+            fromCache = false
+            loading = false
+            refreshing = true
+        } else if events.isEmpty {
+            loading = true
+            refreshing = false
+        } else {
+            refreshing = true
+        }
         error = nil
         do {
             let read = try await APIClient.shared.events()
@@ -131,9 +151,12 @@ struct EventListView: View {
             cachedAt = read.cachedAt
             error = nil
             loading = false
+            refreshing = false
         } catch {
-            self.error = error.localizedDescription
+            self.error = events.isEmpty ? error.localizedDescription : nil
+            if !events.isEmpty { fromCache = true }
             loading = false
+            refreshing = false
         }
     }
 }

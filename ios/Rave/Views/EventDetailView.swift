@@ -12,13 +12,22 @@ struct EventDetailView: View {
     @State private var editing: SetEntry?
     @State private var fromCache = false
     @State private var cachedAt: Date?
+    @State private var refreshing: Bool
+
+    init(eventId: String) {
+        self.eventId = eventId
+        let hit = LastReadStore.shared.load(Event.self, key: .event(eventId))
+        _event = State(initialValue: hit?.payload)
+        _cachedAt = State(initialValue: hit?.savedAt)
+        _refreshing = State(initialValue: hit != nil)
+    }
 
     var body: some View {
         Group {
             if let event {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        if fromCache { OfflineBanner(cachedAt: cachedAt) }
+                        CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
                         header(event)
                         spendCard(event)
                         setsCard(event)
@@ -180,6 +189,15 @@ struct EventDetailView: View {
 
     @MainActor
     private func reload() async {
+        if event == nil, let hit = LastReadStore.shared.load(Event.self, key: .event(eventId)) {
+            event = hit.payload
+            cachedAt = hit.savedAt
+            fromCache = false
+            refreshing = true
+            error = nil
+        } else if event != nil {
+            refreshing = true
+        }
         async let loaded = APIClient.shared.event(id: eventId)
         async let slots = APIClient.shared.schedule(eventId: eventId).slots.count
         do {
@@ -188,8 +206,11 @@ struct EventDetailView: View {
             fromCache = read.fromCache
             cachedAt = read.cachedAt
             error = nil
+            refreshing = false
         } catch {
-            self.error = error.localizedDescription
+            self.error = event == nil ? error.localizedDescription : nil
+            if event != nil { fromCache = true }
+            refreshing = false
         }
         // Most events never get a schedule, so a failed lookup just leaves the button hidden. A
         // cached one still counts, or the feature would vanish exactly when it is needed offline.
