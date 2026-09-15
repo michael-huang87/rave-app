@@ -12,6 +12,7 @@ struct EventDetailView: View {
     @State private var editing: SetEntry?
     @State private var fromCache = false
     @State private var cachedAt: Date?
+    @AppStorage(FestivalMode.storageKey) private var festivalEventId = ""
 
     var body: some View {
         Group {
@@ -131,6 +132,11 @@ struct EventDetailView: View {
                     Menu {
                         Button("Add artists") { showAdd = true }
                         Button("Set times") { showSchedule = true }
+                        // Arming a show that is already over would only turn itself off again.
+                        if FestivalMode.isActive(event) {
+                            Divider()
+                            Toggle("Festival mode", isOn: festivalBinding)
+                        }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -160,6 +166,14 @@ struct EventDetailView: View {
         .padding()
         .background(RaveTheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// One armed event at a time, so turning it on here turns it off wherever it was.
+    private var festivalBinding: Binding<Bool> {
+        Binding(
+            get: { festivalEventId == eventId },
+            set: { festivalEventId = $0 ? eventId : "" }
+        )
     }
 
     private func setRow(_ set: SetEntry) -> some View {

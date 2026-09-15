@@ -75,5 +75,21 @@ reference data you uploaded, and they are there so the picker reads like the pos
 A festival day runs past midnight, so a 02:00 set belongs to the night before. `DAY_ROLLOVER_HOUR`
 is 6: a slot starting before then sorts to the end of its day rather than the start.
 
+The schedule opens on the stage grid rather than the list, because a festival night is a question
+about which stage to be standing at. It opens on tonight rather than on day 1. A day with no times
+on it has nothing to place on a grid, so that day falls back to the list.
+
+## Festival mode
+
+During a festival the schedule is the only screen that matters, and reaching it costs a scroll and
+three taps. **Festival mode** is a toggle on a show's Set times menu. While it is on, that show's
+schedule is a tab, and the app opens on it. The other tabs stay one tap away.
+
+Nothing stores "on". The armed show's end date decides, so the tab takes itself down once the
+festival is over, at 06:00 the morning after the last night. That is the same rollover the set
+times use, so the last night's 02:00 sets are still tickable on the way home.
+
+One show is armed at a time. Only a show that has a schedule and has not ended yet can be armed.
+
 The Shows list runs newest-first, except under **Planned**, where it flips to soonest-first — the
 next show is the one that matters.
