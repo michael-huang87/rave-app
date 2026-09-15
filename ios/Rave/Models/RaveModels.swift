@@ -349,19 +349,76 @@ extension Array {
     }
 }
 
-/// Festival mode is armed by hand and disarmed by the calendar. Nothing stores "on": the armed
-/// event's end date decides, so no timer or background task has to turn it off. A festival night
-/// runs past midnight, so the server's 06:00 rollover is the boundary here too.
+/// Festival mode is on for the festival happening now, so getting to the schedule on the day costs
+/// nothing and needs no setup. The stored value is only an override. Turn it on to reach a
+/// festival's schedule before the first night, or off to put the tab away during one. Either way
+/// the override dies with its festival and never leaks into the next one.
 enum FestivalMode {
-    static let storageKey = "festivalModeEventId"
+    static let storageKey = "festivalModeOverride"
+    /// The server's rollover, restated because the phone decides this one. A night runs past
+    /// midnight, so the festival is not over until 06:00 the morning after the last night.
     static let dayRolloverHour = 6
 
-    static func isActive(_ event: Event, now: Date = Date()) -> Bool {
+    enum Override: Equatable {
+        case auto
+        case on(String)
+        case off(String)
+
+        init(raw: String) {
+            let parts = raw.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2 else { self = .auto; return }
+            switch parts[0] {
+            case "on": self = .on(String(parts[1]))
+            case "off": self = .off(String(parts[1]))
+            default: self = .auto
+            }
+        }
+
+        var raw: String {
+            switch self {
+            case .auto: return ""
+            case .on(let id): return "on:\(id)"
+            case .off(let id): return "off:\(id)"
+            }
+        }
+
+        var eventId: String? {
+            switch self {
+            case .auto: return nil
+            case .on(let id), .off(let id): return id
+            }
+        }
+    }
+
+    /// Whose schedule could belong in the tab bar, best first, so a club show sharing the weekend
+    /// with a festival cannot shadow the one that has a schedule. The caller keeps the first that
+    /// has one. Pass a one-event list to ask about that one show.
+    ///
+    /// An explicit on wins outright, because turning it on early is a deliberate act.
+    static func candidates(in events: [Event], override: Override, now: Date = Date()) -> [Event] {
+        if case .on(let id) = override,
+           let armed = events.first(where: { $0.id == id }), !hasEnded(armed, now: now) {
+            return [armed]
+        }
+        let running = events.filter { isRunning($0, now: now) }
+        if case .off(let id) = override { return running.filter { $0.id != id } }
+        return running
+    }
+
+    /// On from the first midnight through 06:00 after the last night. Both ends err towards on,
+    /// because arriving a day early and leaving after a long last night are the two ways a rave-goer
+    /// actually meets a festival.
+    static func isRunning(_ event: Event, now: Date = Date()) -> Bool {
+        guard let iso = event.startDate, let start = localDayFormatter.date(from: iso) else { return false }
+        return now >= start && !hasEnded(event, now: now)
+    }
+
+    static func hasEnded(_ event: Event, now: Date = Date()) -> Bool {
         guard let iso = event.endDate ?? event.startDate,
               let end = localDayFormatter.date(from: iso),
               let deadline = localCalendar.date(byAdding: .hour, value: 24 + dayRolloverHour, to: end)
-        else { return false }
-        return now < deadline
+        else { return true }
+        return now >= deadline
     }
 
     /// The festival day `now` falls in, when the schedule has one, so the day picker opens on

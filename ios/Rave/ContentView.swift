@@ -5,7 +5,7 @@ private enum RaveTab: Hashable {
 }
 
 struct ContentView: View {
-    @AppStorage(FestivalMode.storageKey) private var festivalEventId = ""
+    @AppStorage(FestivalMode.storageKey) private var overrideRaw = ""
     @Environment(\.scenePhase) private var scenePhase
     @State private var festival: Event?
     @State private var selection = RaveTab.shows
@@ -31,31 +31,48 @@ struct ContentView: View {
                 .tag(RaveTab.recap)
         }
         .tint(RaveTheme.accent)
-        .task {
-            await resolve()
-            if festival != nil { selection = .festival }
-        }
-        .onChange(of: festivalEventId) { Task { await resolve() } }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await resolve() } }
+        .task { await resolve(select: true) }
+        .onChange(of: overrideRaw) { Task { await resolve(select: false) } }
+        // Reopening the app during a festival lands on the schedule again. Switching tabs by hand
+        // does not, so nothing moves under you mid-session.
+        .onChange(of: scenePhase) { was, now in
+            if now == .active, was == .background { Task { await resolve(select: true) } }
         }
     }
 
-    /// A failed load is no evidence the festival is over, so it leaves the mode armed and the tab
-    /// standing. The cached events list is enough to decide, which matters on festival signal.
+    /// A failed load is no evidence the festival is over, so it leaves the tab standing. The
+    /// last-read events list is enough to decide, which matters on festival signal.
     @MainActor
-    private func resolve() async {
-        guard !festivalEventId.isEmpty else { return disarm() }
+    private func resolve(select: Bool) async {
         guard let read = try? await APIClient.shared.events() else { return }
-        guard let event = read.value.first(where: { $0.id == festivalEventId }),
-              FestivalMode.isActive(event) else {
-            festivalEventId = ""
-            return disarm()
+        let events = read.value
+
+        var override = FestivalMode.Override(raw: overrideRaw)
+        if let id = override.eventId, let named = events.first(where: { $0.id == id }),
+           FestivalMode.hasEnded(named) {
+            overrideRaw = ""
+            override = .auto
         }
-        festival = event
+
+        for candidate in FestivalMode.candidates(in: events, override: override) {
+            guard await hasSchedule(candidate.id) else { continue }
+            festival = candidate
+            if select { selection = .festival }
+            return
+        }
+        clear()
     }
 
-    private func disarm() {
+    /// A festival with no schedule has no tab to offer. A cached one still counts, or the tab would
+    /// vanish exactly when the signal does.
+    private func hasSchedule(_ eventId: String) async -> Bool {
+        if let cached = await ScheduleStore.shared.record(for: eventId), !cached.schedule.slots.isEmpty {
+            return true
+        }
+        return (try? await APIClient.shared.schedule(eventId: eventId))?.slots.isEmpty == false
+    }
+
+    private func clear() {
         festival = nil
         if selection == .festival { selection = .shows }
     }

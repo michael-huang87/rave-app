@@ -12,7 +12,7 @@ struct EventDetailView: View {
     @State private var editing: SetEntry?
     @State private var fromCache = false
     @State private var cachedAt: Date?
-    @AppStorage(FestivalMode.storageKey) private var festivalEventId = ""
+    @AppStorage(FestivalMode.storageKey) private var overrideRaw = ""
 
     var body: some View {
         Group {
@@ -132,10 +132,10 @@ struct EventDetailView: View {
                     Menu {
                         Button("Add artists") { showAdd = true }
                         Button("Set times") { showSchedule = true }
-                        // Arming a show that is already over would only turn itself off again.
-                        if FestivalMode.isActive(event) {
+                        // A show that is already over has no schedule worth a tab.
+                        if !FestivalMode.hasEnded(event) {
                             Divider()
-                            Toggle("Festival mode", isOn: festivalBinding)
+                            Toggle("Festival mode", isOn: festivalBinding(event))
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -168,11 +168,19 @@ struct EventDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    /// One armed event at a time, so turning it on here turns it off wherever it was.
-    private var festivalBinding: Binding<Bool> {
+    /// Reads through the same rule the tab bar uses, so a festival that is already running shows
+    /// on without anything stored. Turning it off before the first night only cancels an early on;
+    /// only turning it off during the festival has to be remembered.
+    private func festivalBinding(_ event: Event) -> Binding<Bool> {
         Binding(
-            get: { festivalEventId == eventId },
-            set: { festivalEventId = $0 ? eventId : "" }
+            get: { !FestivalMode.candidates(in: [event], override: .init(raw: overrideRaw)).isEmpty },
+            set: { on in
+                if on {
+                    overrideRaw = FestivalMode.Override.on(eventId).raw
+                } else {
+                    overrideRaw = FestivalMode.isRunning(event) ? FestivalMode.Override.off(eventId).raw : ""
+                }
+            }
         )
     }
 
