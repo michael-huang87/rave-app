@@ -7,6 +7,12 @@ enum ScheduleMode: String, CaseIterable {
     var label: String { self == .plan ? "Plan" : "Seen" }
 }
 
+/// A sheet closes on Done; the festival tab has nowhere to go, and its pending line already
+/// carries the retry.
+enum SchedulePresentation {
+    case sheet, tab
+}
+
 enum ScheduleFilter: Hashable {
     case all
     case planned
@@ -15,13 +21,14 @@ enum ScheduleFilter: Hashable {
 
 struct ScheduleView: View {
     let event: Event
+    var presentation = SchedulePresentation.sheet
     var onSaved: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var record: ScheduleRecord?
     @State private var day = ""
     @State private var mode = ScheduleMode.seen
-    @State private var showGrid = false
+    @State private var showGrid = true
     @State private var filter = ScheduleFilter.all
     /// Colours come off the whole schedule, so narrowing the day or the stage never repaints anything.
     @State private var stageOrder: [String] = []
@@ -51,12 +58,14 @@ struct ScheduleView: View {
                 }
             }
             .background(RaveTheme.bg)
-            .navigationTitle("Set times")
+            .navigationTitle(presentation == .tab ? event.show : "Set times")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(saveLabel) { Task { await save() } }
-                        .disabled(record == nil)
+                if presentation == .sheet {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(saveLabel) { Task { await save() } }
+                            .disabled(record == nil)
+                    }
                 }
             }
             .task { await open() }
@@ -166,23 +175,17 @@ struct ScheduleView: View {
         let slots = visibleSlots(record)
         if slots.isEmpty {
             ContentUnavailableView("Nothing here", systemImage: "moon.zzz", description: Text(emptyReason(record)))
-        } else if showGrid {
-            if let layout = ScheduleDayLayout(schedule: record.schedule, day: day, stageOrder: stageOrder) {
-                ScheduleGridView(
-                    layout: layout,
-                    stageOrder: stageOrder,
-                    visible: Set(slots.map(\.id)),
-                    planned: record.planned,
-                    selected: record.selected,
-                    onTap: toggle
-                )
-            } else {
-                ContentUnavailableView(
-                    "No times on this day",
-                    systemImage: "clock.badge.questionmark",
-                    description: Text("The schedule came back without a time axis, so the stage grid has nothing to place. The list still works.")
-                )
-            }
+        // A day with no time axis has nothing to place on the grid, and the grid is the default,
+        // so it falls back to the list rather than to a dead end.
+        } else if showGrid, let layout = ScheduleDayLayout(schedule: record.schedule, day: day, stageOrder: stageOrder) {
+            ScheduleGridView(
+                layout: layout,
+                stageOrder: stageOrder,
+                visible: Set(slots.map(\.id)),
+                planned: record.planned,
+                selected: record.selected,
+                onTap: toggle
+            )
         } else {
             list(slots, record: record)
         }
@@ -285,7 +288,9 @@ struct ScheduleView: View {
     private func adopt(_ fresh: ScheduleRecord) {
         record = fresh
         stageOrder = StagePalette.order(fresh.schedule)
-        if !fresh.schedule.days.contains(day) { day = fresh.schedule.days.first ?? "" }
+        if !fresh.schedule.days.contains(day) {
+            day = FestivalMode.currentDay(in: fresh.schedule.days) ?? fresh.schedule.days.first ?? ""
+        }
     }
 
     @MainActor
