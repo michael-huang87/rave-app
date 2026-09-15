@@ -3,6 +3,9 @@
 Envelope: {"saved_at": ISO-8601, "payload": ...}
 Keys: events.json, sets.json, recap.json, stats.json, event-<id>.json
 Id sanitization: "/" and ":" become "_".
+
+Screens paint last-read immediately, then refresh. A spinner is only OK when
+there is no file yet. A failed refresh keeps the cache; it does not clear it.
 """
 
 from __future__ import annotations
@@ -37,3 +40,39 @@ def load(directory: Path, key: str, event_id: str | None = None) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def cache_first_refresh(
+    directory: Path,
+    key: str,
+    *,
+    live: object | None = None,
+    fail: bool = False,
+    event_id: str | None = None,
+) -> dict:
+    """iOS open path: last-read first, then network.
+
+    Returns immediate (None → spinner OK), final, from_cache, loading.
+    Raises when there is no cache and the refresh fails.
+    """
+    cached = load(directory, key, event_id=event_id)
+    immediate = None if cached is None else cached["payload"]
+    loading = immediate is None
+    if fail:
+        if cached is None:
+            raise FileNotFoundError("no cache and network failed")
+        return {
+            "immediate": immediate,
+            "final": cached["payload"],
+            "from_cache": True,
+            "loading": loading,
+        }
+    if live is None:
+        raise ValueError("live payload required when fail is False")
+    save(directory, key, live, event_id=event_id)
+    return {
+        "immediate": immediate,
+        "final": live,
+        "from_cache": False,
+        "loading": loading,
+    }

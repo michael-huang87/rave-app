@@ -5,6 +5,14 @@ struct RecapView: View {
     @State private var error: String?
     @State private var fromCache = false
     @State private var cachedAt: Date?
+    @State private var refreshing: Bool
+
+    init() {
+        let hit = LastReadStore.shared.load(Recap.self, key: .recap)
+        _recap = State(initialValue: hit?.payload)
+        _cachedAt = State(initialValue: hit?.savedAt)
+        _refreshing = State(initialValue: hit != nil)
+    }
 
     var body: some View {
         NavigationStack {
@@ -38,7 +46,7 @@ struct RecapView: View {
             .background(RaveTheme.bg)
             .navigationTitle("Recap")
             .safeAreaInset(edge: .top, spacing: 0) {
-                if fromCache { OfflineBanner(cachedAt: cachedAt) }
+                CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
             }
             .task { await load() }
             .refreshable { await load() }
@@ -69,14 +77,26 @@ struct RecapView: View {
 
     @MainActor
     private func load() async {
+        if recap == nil, let hit = LastReadStore.shared.load(Recap.self, key: .recap) {
+            recap = hit.payload
+            cachedAt = hit.savedAt
+            fromCache = false
+            refreshing = true
+            error = nil
+        } else {
+            refreshing = recap != nil
+        }
         do {
             let read = try await APIClient.shared.recap()
             recap = read.value
             fromCache = read.fromCache
             cachedAt = read.cachedAt
             error = nil
+            refreshing = false
         } catch {
-            self.error = error.localizedDescription
+            self.error = recap == nil ? error.localizedDescription : nil
+            if recap != nil { fromCache = true }
+            refreshing = false
         }
     }
 }

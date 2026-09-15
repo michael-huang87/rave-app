@@ -40,13 +40,20 @@ struct ContentView: View {
         }
     }
 
-    /// A failed load is no evidence the festival is over, so it leaves the tab standing. The
-    /// last-read events list is enough to decide, which matters on festival signal.
+    /// Last-read decides first, because the tab this whole feature exists for should not wait on a
+    /// GET that takes 15s to time out on festival signal. A failed refresh is then no evidence the
+    /// festival is over, so it leaves the tab standing.
     @MainActor
     private func resolve(select: Bool) async {
+        if let hit = LastReadStore.shared.load([Event].self, key: .events) {
+            await adopt(hit.payload, select: select)
+        }
         guard let read = try? await APIClient.shared.events() else { return }
-        let events = read.value
+        await adopt(read.value, select: select)
+    }
 
+    @MainActor
+    private func adopt(_ events: [Event], select: Bool) async {
         var override = FestivalMode.Override(raw: overrideRaw)
         if let id = override.eventId, let named = events.first(where: { $0.id == id }),
            FestivalMode.hasEnded(named) {
@@ -56,8 +63,11 @@ struct ContentView: View {
 
         for candidate in FestivalMode.candidates(in: events, override: override) {
             guard await hasSchedule(candidate.id) else { continue }
+            // The refresh usually confirms what last-read already painted, and re-selecting then
+            // would pull you off whatever tab you moved to in between.
+            let wasShowing = festival?.id == candidate.id
             festival = candidate
-            if select { selection = .festival }
+            if select, !wasShowing { selection = .festival }
             return
         }
         clear()
