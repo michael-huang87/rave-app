@@ -75,5 +75,33 @@ reference data you uploaded, and they are there so the picker reads like the pos
 A festival day runs past midnight, so a 02:00 set belongs to the night before. `DAY_ROLLOVER_HOUR`
 is 6: a slot starting before then sorts to the end of its day rather than the start.
 
+The schedule opens on the stage grid rather than the list, because a festival night is a question
+about which stage to be standing at. It opens on tonight rather than on day 1. A day with no times
+on it has nothing to place on a grid, so that day falls back to the list.
+
+## Festival mode
+
+During a festival the schedule is the only screen that matters, and reaching it costs a scroll and
+three taps. **Festival mode** puts that schedule in the tab bar and opens the app on it. The other
+tabs stay one tap away.
+
+It is on by itself for a show whose dates cover today and that has a schedule uploaded, so a
+festival needs no setup on the day. On from the first midnight through 06:00 the morning after the
+last night, the same rollover the set times use, because arriving a day early and leaving after a
+long last night are the two ways you actually meet a festival.
+
+Nothing stores "on". The stored value is only an **override**, set by the toggle on a show's Set
+times menu:
+
+| Stored | What it does |
+| --- | --- |
+| nothing | The festival happening now, if it has a schedule. |
+| `on:<id>` | That show, before its first night. For reading next month's lineup in the tab. |
+| `off:<id>` | Not that show, while it is running. For putting the tab away. |
+
+An override dies with the show it names, so it never leaks into the next festival. A show with no
+schedule has no tab to offer, and a show sharing the weekend with a festival cannot shadow the one
+that does have a schedule.
+
 The Shows list runs newest-first, except under **Planned**, where it flips to soonest-first — the
 next show is the one that matters.

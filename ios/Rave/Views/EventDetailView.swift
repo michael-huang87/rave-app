@@ -13,6 +13,7 @@ struct EventDetailView: View {
     @State private var fromCache = false
     @State private var cachedAt: Date?
     @State private var refreshing: Bool
+    @AppStorage(FestivalMode.storageKey) private var overrideRaw = ""
 
     init(eventId: String) {
         self.eventId = eventId
@@ -140,6 +141,11 @@ struct EventDetailView: View {
                     Menu {
                         Button("Add artists") { showAdd = true }
                         Button("Set times") { showSchedule = true }
+                        // A show that is already over has no schedule worth a tab.
+                        if !FestivalMode.hasEnded(event) {
+                            Divider()
+                            Toggle("Festival mode", isOn: festivalBinding(event))
+                        }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -169,6 +175,22 @@ struct EventDetailView: View {
         .padding()
         .background(RaveTheme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// Reads through the same rule the tab bar uses, so a festival that is already running shows
+    /// on without anything stored. Turning it off before the first night only cancels an early on;
+    /// only turning it off during the festival has to be remembered.
+    private func festivalBinding(_ event: Event) -> Binding<Bool> {
+        Binding(
+            get: { !FestivalMode.candidates(in: [event], override: .init(raw: overrideRaw)).isEmpty },
+            set: { on in
+                if on {
+                    overrideRaw = FestivalMode.Override.on(eventId).raw
+                } else {
+                    overrideRaw = FestivalMode.isRunning(event) ? FestivalMode.Override.off(eventId).raw : ""
+                }
+            }
+        )
     }
 
     private func setRow(_ set: SetEntry) -> some View {

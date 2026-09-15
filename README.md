@@ -64,6 +64,20 @@ python3 -m pytest tests/test_api.py -q
 
 Snapshot-backed tests skip if `data/events.json` is missing.
 
+## Festival mode
+
+The schedule of the festival happening now sits in the tab bar and the app opens on it, with
+nothing to set up. A toggle on a show's Set times menu overrides that, either to reach a festival's
+schedule before its first night or to put the tab away during one. See `PRODUCT.md`.
+
+The date rules are pure functions in `ios/Rave/Models/RaveModels.swift`, checked against the
+shipping source:
+
+```bash
+swiftc -parse-as-library ios/Rave/Models/RaveModels.swift ios/FestivalModeCheck.swift \
+  -o /tmp/festival-mode-check && /tmp/festival-mode-check
+```
+
 ## Reconciling the data
 
 The sheet is the source of truth, so corrections belong in the sheet or in
