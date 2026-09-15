@@ -348,3 +348,38 @@ extension Array {
         return order.map { (key: $0, values: buckets[$0] ?? []) }
     }
 }
+
+/// Festival mode is armed by hand and disarmed by the calendar. Nothing stores "on": the armed
+/// event's end date decides, so no timer or background task has to turn it off. A festival night
+/// runs past midnight, so the server's 06:00 rollover is the boundary here too.
+enum FestivalMode {
+    static let storageKey = "festivalModeEventId"
+    static let dayRolloverHour = 6
+
+    static func isActive(_ event: Event, now: Date = Date()) -> Bool {
+        guard let iso = event.endDate ?? event.startDate,
+              let end = localDayFormatter.date(from: iso),
+              let deadline = localCalendar.date(byAdding: .hour, value: 24 + dayRolloverHour, to: end)
+        else { return false }
+        return now < deadline
+    }
+
+    /// The festival day `now` falls in, when the schedule has one, so the day picker opens on
+    /// tonight rather than on day 1.
+    static func currentDay(in days: [String], now: Date = Date()) -> String? {
+        let anchor = localCalendar.component(.hour, from: now) < dayRolloverHour
+            ? localCalendar.date(byAdding: .day, value: -1, to: now) ?? now
+            : now
+        let iso = localDayFormatter.string(from: anchor)
+        return days.contains(iso) ? iso : nil
+    }
+}
+
+/// Local, not GMT: the deadline is 06:00 where the phone is standing.
+private let localDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    return f
+}()
+
+private let localCalendar = Calendar(identifier: .gregorian)
