@@ -66,8 +66,9 @@ Snapshot-backed tests skip if `data/events.json` is missing.
 
 ## Festival mode
 
-A toggle on a show's Set times menu puts that show's schedule in the tab bar and opens the app on
-it. It turns itself off after the show's end date. See `PRODUCT.md`.
+The schedule of the festival happening now sits in the tab bar and the app opens on it, with
+nothing to set up. A toggle on a show's Set times menu overrides that, either to reach a festival's
+schedule before its first night or to put the tab away during one. See `PRODUCT.md`.
 
 The date rules are pure functions in `ios/Rave/Models/RaveModels.swift`, checked against the
 shipping source:

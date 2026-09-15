@@ -82,14 +82,26 @@ on it has nothing to place on a grid, so that day falls back to the list.
 ## Festival mode
 
 During a festival the schedule is the only screen that matters, and reaching it costs a scroll and
-three taps. **Festival mode** is a toggle on a show's Set times menu. While it is on, that show's
-schedule is a tab, and the app opens on it. The other tabs stay one tap away.
+three taps. **Festival mode** puts that schedule in the tab bar and opens the app on it. The other
+tabs stay one tap away.
 
-Nothing stores "on". The armed show's end date decides, so the tab takes itself down once the
-festival is over, at 06:00 the morning after the last night. That is the same rollover the set
-times use, so the last night's 02:00 sets are still tickable on the way home.
+It is on by itself for a show whose dates cover today and that has a schedule uploaded, so a
+festival needs no setup on the day. On from the first midnight through 06:00 the morning after the
+last night, the same rollover the set times use, because arriving a day early and leaving after a
+long last night are the two ways you actually meet a festival.
 
-One show is armed at a time. Only a show that has a schedule and has not ended yet can be armed.
+Nothing stores "on". The stored value is only an **override**, set by the toggle on a show's Set
+times menu:
+
+| Stored | What it does |
+| --- | --- |
+| nothing | The festival happening now, if it has a schedule. |
+| `on:<id>` | That show, before its first night. For reading next month's lineup in the tab. |
+| `off:<id>` | Not that show, while it is running. For putting the tab away. |
+
+An override dies with the show it names, so it never leaks into the next festival. A show with no
+schedule has no tab to offer, and a show sharing the weekend with a festival cannot shadow the one
+that does have a schedule.
 
 The Shows list runs newest-first, except under **Planned**, where it flips to soonest-first — the
 next show is the one that matters.
