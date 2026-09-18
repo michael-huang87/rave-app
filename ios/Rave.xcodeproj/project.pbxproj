@@ -22,6 +22,7 @@
 		C17B7AF61FD94540AA8BDE96 /* LogSpendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E23B85CA7164EA7A3A38AA7 /* LogSpendView.swift */; };
 		D8A6767462024799AEAB1709 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B73B4DD4D0B4C7988D4A938 /* APIClient.swift */; };
 		EDDEB1840C5E385217923735 /* ScheduleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B711F225BACFA5BAB4F79757 /* ScheduleStore.swift */; };
+		EDDEB1840C5E385217923736 /* Outbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = B711F225BACFA5BAB4F79758 /* Outbox.swift */; };
 		18E578D873DD0C969FF0AAFB /* ScheduleGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9597CBAD004B330A49689895 /* ScheduleGridView.swift */; };
 		1A2B3C4D5E6F708192A3B4C6 /* LastReadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F708192A3B4C5 /* LastReadStore.swift */; };
 		3C4D5E6F708192A3B4C5D6E8 /* NetworkRestored.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4D5E6F708192A3B4C5D6E7 /* NetworkRestored.swift */; };
@@ -45,6 +46,7 @@
 		FFAD9F5F70FD993CA103F0A0 /* ScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleView.swift; sourceTree = "<group>"; };
 		9597CBAD004B330A49689895 /* ScheduleGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleGridView.swift; sourceTree = "<group>"; };
 		B711F225BACFA5BAB4F79757 /* ScheduleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleStore.swift; sourceTree = "<group>"; };
+		B711F225BACFA5BAB4F79758 /* Outbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Outbox.swift; sourceTree = "<group>"; };
 		6CE2BF303729EAFC5A20E46D /* EditSetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditSetView.swift; sourceTree = "<group>"; };
 		B9991EA08D8442FDB5DE56B1 /* EventListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventListView.swift; sourceTree = "<group>"; };
 		0E8E513D027442908755314D /* SetsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetsListView.swift; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 			children = (
 				1B73B4DD4D0B4C7988D4A938 /* APIClient.swift */,
 				B711F225BACFA5BAB4F79757 /* ScheduleStore.swift */,
+				B711F225BACFA5BAB4F79758 /* Outbox.swift */,
 				1A2B3C4D5E6F708192A3B4C5 /* LastReadStore.swift */,
 				3C4D5E6F708192A3B4C5D6E7 /* NetworkRestored.swift */,
 			);
@@ -207,6 +210,7 @@
 				6DF7EBE739FD43AA9F515AAA /* RaveModels.swift in Sources */,
 				D8A6767462024799AEAB1709 /* APIClient.swift in Sources */,
 				EDDEB1840C5E385217923735 /* ScheduleStore.swift in Sources */,
+				EDDEB1840C5E385217923736 /* Outbox.swift in Sources */,
 				1A2B3C4D5E6F708192A3B4C6 /* LastReadStore.swift in Sources */,
 				3C4D5E6F708192A3B4C5D6E8 /* NetworkRestored.swift in Sources */,
 				2B3C4D5E6F708192A3B4C5D7 /* OfflineBanner.swift in Sources */,

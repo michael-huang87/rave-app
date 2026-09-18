@@ -170,7 +170,7 @@ struct Stats: Codable {
     var cities: [StatCount]
 }
 
-struct EventDraft: Codable {
+struct EventDraft: Codable, Equatable {
     var show: String
     var venue: String?
     var city: String?
@@ -181,21 +181,23 @@ struct EventDraft: Codable {
     var drinksFoodMerch: Double
 }
 
-struct SpendDraft: Codable {
+struct SpendDraft: Codable, Equatable {
     var ticket: Double
     var travel: Double
     var drinksFoodMerch: Double
 }
 
-struct SetDraft: Codable {
-    var title: String
+struct BulkSetsDraft: Codable, Equatable {
     var artists: [String]
     var date: String?
 }
 
-struct BulkSetsDraft: Codable {
-    var artists: [String]
-    var date: String?
+struct EventPatch: Codable, Equatable {
+    var show: String
+    var venue: String?
+    var city: String?
+    var startDate: String?
+    var endDate: String?
 }
 
 struct BulkSetsResponse: Codable {
@@ -203,7 +205,7 @@ struct BulkSetsResponse: Codable {
     var skipped: [String]
 }
 
-struct SetPatch: Codable {
+struct SetPatch: Codable, Equatable {
     var title: String?
     var artists: [String]?
     var date: String?

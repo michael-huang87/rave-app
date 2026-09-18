@@ -14,12 +14,12 @@ enum APIError: LocalizedError {
         case .decode: return "Could not read the server response"
         case .transport(let message): return message
         case .needsSignal:
-            return "Edits need a signal. You can still read last-loaded shows, but changes are not saved offline."
+            return "No signal. The change is saved on this phone and goes up when the API is reachable."
         }
     }
 }
 
-actor APIClient {
+actor APIClient: OutboxSyncing {
     static let shared = APIClient()
 
     static var configuredBaseURL: String {
@@ -48,6 +48,11 @@ actor APIClient {
     }
 
     private static func resolveBaseURL() -> URL {
+        // Set by the launch environment so the offline paths can be driven against a dead port
+        // without stopping the real backend.
+        if let raw = ProcessInfo.processInfo.environment["RAVE_API_BASE_URL"], let url = URL(string: raw) {
+            return url
+        }
         #if targetEnvironment(simulator)
         return URL(string: "http://127.0.0.1:8000")!
         #else
@@ -94,45 +99,55 @@ actor APIClient {
         try await cachedGet("/stats", key: .stats)
     }
 
-    func createEvent(_ draft: EventDraft) async throws -> Event {
-        let event: Event = try await send("/events", method: "POST", body: draft)
-        store.save(event, key: .event(event.id))
-        return event
-    }
-
-    func updateEvent(id: String, show: String, venue: String?, city: String?, startDate: String?, endDate: String?) async throws -> Event {
-        struct Patch: Codable {
-            var show: String
-            var venue: String?
-            var city: String?
-            var startDate: String?
-            var endDate: String?
+    /// The one door every write goes through. With a signal it sends; without one it puts the
+    /// write in the outbox, where the next reachable moment picks it up. Writes already waiting
+    /// hold the door: a new write queues behind them so the server never sees a later edit
+    /// before the earlier one it was typed on top of.
+    func submit(_ write: PendingWrite) async throws {
+        if await Outbox.shared.count > 0 {
+            await Outbox.shared.enqueue(write)
+            await flushOutbox()
+            return
         }
-        let event: Event = try await send("/events/\(id)", method: "PATCH", body: Patch(show: show, venue: venue, city: city, startDate: startDate, endDate: endDate))
-        store.save(event, key: .event(event.id))
-        return event
+        do {
+            try await perform(write)
+        } catch APIError.needsSignal {
+            await Outbox.shared.enqueue(write)
+        }
     }
 
-    func logSpend(eventId: String, spend: SpendDraft) async throws -> Event {
-        let event: Event = try await send("/events/\(eventId)/spend", method: "PATCH", body: spend)
-        store.save(event, key: .event(event.id))
-        return event
+    @discardableResult
+    func perform(_ write: PendingWrite) async throws -> String? {
+        switch write {
+        case .createEvent(_, let draft):
+            let event: Event = try await send("/events", method: "POST", body: draft)
+            store.save(event, key: .event(event.id))
+            return event.id
+        case .updateEvent(let id, let patch):
+            let event: Event = try await send("/events/\(id)", method: "PATCH", body: patch)
+            store.save(event, key: .event(event.id))
+        case .logSpend(let eventId, let spend):
+            let event: Event = try await send("/events/\(eventId)/spend", method: "PATCH", body: spend)
+            store.save(event, key: .event(event.id))
+        case .bulkAddSets(let eventId, _, let draft):
+            let _: BulkSetsResponse = try await send("/events/\(eventId)/sets/bulk", method: "POST", body: draft)
+        case .updateSet(let id, let patch):
+            let _: SetEntry = try await send("/sets/\(id)", method: "PATCH", body: patch)
+        case .deleteSet(let id):
+            try await deleteSet(id: id)
+        }
+        return nil
     }
 
-    func logSet(eventId: String, draft: SetDraft) async throws -> SetEntry {
-        try await send("/events/\(eventId)/sets", method: "POST", body: draft)
-    }
-
-    func bulkAddSets(eventId: String, draft: BulkSetsDraft) async throws -> BulkSetsResponse {
-        try await send("/events/\(eventId)/sets/bulk", method: "POST", body: draft)
-    }
-
-    func updateSet(id: String, patch: SetPatch) async throws -> SetEntry {
-        try await send("/sets/\(id)", method: "PATCH", body: patch)
-    }
-
+    /// ScheduleStore drives its own sync off derived state rather than the outbox, so it needs
+    /// the raw call.
     func deleteSet(id: String) async throws {
         try await sendNoContent("/sets/\(id)", method: "DELETE")
+    }
+
+    @discardableResult
+    func flushOutbox() async -> Int {
+        await Outbox.shared.flush(using: self)
     }
 
     func schedule(eventId: String) async throws -> Schedule {
@@ -154,15 +169,29 @@ actor APIClient {
     /// Network refresh for a last-read key. Screens paint `LastReadStore.shared` first so this
     /// wait never gates the UI when a cache already exists. On failure, serve that cache.
     private func cachedGet<T: Codable>(_ path: String, query: [URLQueryItem] = [], key: LastReadKey) async throws -> ReadResult<T> {
+        let pending = await Outbox.shared.snapshot
         do {
             let live: T = try await get(path, query: query)
             store.save(live, key: key)
-            return ReadResult(value: live, fromCache: false, cachedAt: nil)
+            return ReadResult(value: overlay(live, pending), fromCache: false, cachedAt: nil)
         } catch {
             if let hit = store.load(T.self, key: key) {
-                return ReadResult(value: hit.payload, fromCache: true, cachedAt: hit.savedAt)
+                return ReadResult(value: overlay(hit.payload, pending), fromCache: true, cachedAt: hit.savedAt)
             }
             throw error
+        }
+    }
+
+    /// Last-read holds only what the server said, so an unsent write has to be laid back over it
+    /// for the screen that made the edit to show it. Recap and stats are server-side aggregates,
+    /// so they stay as last read until the queue drains.
+    private func overlay<T>(_ value: T, _ pending: OutboxSnapshot) -> T {
+        guard !pending.isEmpty else { return value }
+        switch value {
+        case let events as [Event]: return pending.apply(to: events) as? T ?? value
+        case let event as Event: return pending.apply(to: event) as? T ?? value
+        case let sets as [SetEntry]: return pending.apply(to: sets) as? T ?? value
+        default: return value
         }
     }
 

@@ -73,12 +73,14 @@ struct EditSetView: View {
         error = nil
         let artistNames = names(from: artists, separator: ",")
         do {
-            _ = try await APIClient.shared.updateSet(
-                id: set.id,
-                patch: SetPatch(
-                    title: title,
-                    artists: artistNames.isEmpty ? [title] : artistNames,
-                    date: date.isEmpty ? nil : date
+            try await APIClient.shared.submit(
+                .updateSet(
+                    id: set.id,
+                    patch: SetPatch(
+                        title: title,
+                        artists: artistNames.isEmpty ? [title] : artistNames,
+                        date: date.isEmpty ? nil : date
+                    )
                 )
             )
             await onSaved()
@@ -94,7 +96,7 @@ struct EditSetView: View {
         saving = true
         error = nil
         do {
-            try await APIClient.shared.deleteSet(id: set.id)
+            try await APIClient.shared.submit(.deleteSet(id: set.id))
             await onSaved()
             dismiss()
         } catch {
