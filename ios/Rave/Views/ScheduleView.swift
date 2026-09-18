@@ -215,11 +215,11 @@ struct ScheduleView: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(StagePalette.color(slot.stageKey, in: stageOrder))
                 .frame(width: 4)
-            Text(slot.startTime ?? "")
+            Text(clockLabel(slot.startTime) ?? "")
                 .font(.subheadline)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .frame(width: 46, alignment: .leading)
+                .frame(width: 74, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(slot.title)
                 Text(slot.stageKey)

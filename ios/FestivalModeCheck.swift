@@ -95,6 +95,29 @@ struct FestivalModeCheck {
         check(FestivalMode.currentDay(in: days, now: at("2026-09-20", 7)) == "2026-09-20", "past 06:00 it rolls over")
         check(FestivalMode.currentDay(in: days, now: early) == nil, "before the schedule opens")
 
+        // Set times read as a clock, not a 24 hour string.
+        check(clockLabel("14:00") == "2:00 PM", "afternoon")
+        check(clockLabel("09:30") == "9:30 AM", "morning keeps no leading zero")
+        check(clockLabel("00:15") == "12:15 AM", "the small hours are 12, not 0")
+        check(clockLabel("12:00") == "12:00 PM", "noon is PM")
+        check(clockLabel("23:59") == "11:59 PM", "the last minute of the night")
+        check(clockLabel(nil) == nil && clockLabel("") == nil, "a slot with no time has no label")
+        check(clockLabel("24:00") == nil && clockLabel("9") == nil, "a time the server never sends is refused")
+        check(clockHourLabel(0) == "12 AM" && clockHourLabel(13) == "1 PM", "the hour gutter drops the minutes")
+
+        // Through the layout, because a free function and a method of the same name resolve
+        // differently here than at the call site inside ScheduleDayLayout.
+        let grid = ScheduleDayLayout(
+            schedule: Schedule(eventId: "e", days: ["2026-09-18"], slots: [
+                ScheduleSlot(id: "a", day: "2026-09-18", stage: "Prehistoric Stage", title: "Tynan",
+                             artists: ["Tynan"], startTime: "14:00", endTime: nil,
+                             startMinute: 840, endMinute: nil, sortIndex: 0, seen: false, setId: nil),
+            ]),
+            day: "2026-09-18",
+            stageOrder: ["Prehistoric Stage"]
+        )
+        check(grid?.hourLabel(840) == "2 PM", "the grid gutter labels its own axis without recursing")
+
         print("FestivalMode: \(checks) checks passed")
     }
 }
