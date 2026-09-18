@@ -112,11 +112,14 @@ struct QuickAddSetsView: View {
         saving = true
         error = nil
         do {
-            _ = try await APIClient.shared.bulkAddSets(
-                eventId: event.id,
-                draft: BulkSetsDraft(
-                    artists: pending,
-                    date: event.nights.count > 1 ? night : event.startDate
+            try await APIClient.shared.submit(
+                .bulkAddSets(
+                    eventId: event.id,
+                    localIdPrefix: "local-\(UUID().uuidString.prefix(8))",
+                    draft: BulkSetsDraft(
+                        artists: pending,
+                        date: event.nights.count > 1 ? night : event.startDate
+                    )
                 )
             )
             await onSaved()

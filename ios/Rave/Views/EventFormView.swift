@@ -61,25 +61,32 @@ struct EventFormView: View {
         error = nil
         do {
             if let existing {
-                _ = try await APIClient.shared.updateEvent(
-                    id: existing.id,
-                    show: show,
-                    venue: venue.nilIfEmpty,
-                    city: city.nilIfEmpty,
-                    startDate: start.nilIfEmpty,
-                    endDate: end.nilIfEmpty
+                try await APIClient.shared.submit(
+                    .updateEvent(
+                        id: existing.id,
+                        patch: EventPatch(
+                            show: show,
+                            venue: venue.nilIfEmpty,
+                            city: city.nilIfEmpty,
+                            startDate: start.nilIfEmpty,
+                            endDate: end.nilIfEmpty
+                        )
+                    )
                 )
             } else {
-                _ = try await APIClient.shared.createEvent(
-                    EventDraft(
-                        show: show,
-                        venue: venue.nilIfEmpty,
-                        city: city.nilIfEmpty,
-                        startDate: start.nilIfEmpty,
-                        endDate: end.nilIfEmpty,
-                        ticket: Double(ticket) ?? 0,
-                        travel: 0,
-                        drinksFoodMerch: 0
+                try await APIClient.shared.submit(
+                    .createEvent(
+                        localId: "local-\(UUID().uuidString.prefix(8))",
+                        draft: EventDraft(
+                            show: show,
+                            venue: venue.nilIfEmpty,
+                            city: city.nilIfEmpty,
+                            startDate: start.nilIfEmpty,
+                            endDate: end.nilIfEmpty,
+                            ticket: Double(ticket) ?? 0,
+                            travel: 0,
+                            drinksFoodMerch: 0
+                        )
                     )
                 )
             }

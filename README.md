@@ -103,10 +103,27 @@ category that regresses is visible.
 1. Build the local snapshot and start the backend.
 2. Open `ios/Rave.xcodeproj` in Xcode (iOS 17+).
 3. Simulator talks to `http://127.0.0.1:8000`. On a device, set `APIBaseURL` in `ios/Rave/Info.plist` to your Mac's API URL (see below).
-4. After a successful load, the app writes last-read JSON under Application Support `Rave/LastRead/` (events list, event detail, sets, recap, stats). Opening those screens paints the cache immediately and refreshes in the background; a full-screen spinner only appears when that screen has never been loaded. Offline or unreachable backend keeps the cache on screen with an "Offline — last loaded data" banner. Edits are refused until there is a signal — there is no write queue. Pull to refresh or wait for the path to come back; both refetch and update the cache.
-5. Do not submit to App Store Connect.
+4. After a successful load, the app writes last-read JSON under Application Support `Rave/LastRead/` (events list, event detail, sets, recap, stats). Opening those screens paints the cache immediately and refreshes in the background; a full-screen spinner only appears when that screen has never been loaded. Offline or unreachable backend keeps the cache on screen with an "Offline — last loaded data" banner. Pull to refresh or wait for the path to come back; both refetch and update the cache.
+5. Edits work with no signal. A save that cannot reach the API goes into a durable outbox under Application Support `Outbox.json`, and the screens lay the queue over last-read so the edit you just made is the one you see. A banner counts what is waiting. The queue drains in the order you typed it when the path comes back, the app is reopened, or the API becomes reachable again, and it survives a force quit. Recap and Stats are server-side aggregates, so they stay as last read until the queue drains.
+6. Do not submit to App Store Connect.
 
 This Linux VM cannot simulator-run iOS. Cache file layout and cache-first refresh are covered by `tests/test_last_read_cache.py`. On a Mac: load online, kill the app, reopen Shows / a show / Recap / Stats — last-read should appear before the network returns, then update. Airplane mode should keep that cache plus the offline banner.
+
+The outbox has two checks that need no simulator. The queue and the overlay:
+
+```bash
+swiftc -parse-as-library ios/Rave/Models/RaveModels.swift ios/Rave/Services/LastReadStore.swift \
+  ios/Rave/Services/APIClient.swift ios/Rave/Services/Outbox.swift ios/OutboxCheck.swift \
+  -o /tmp/outbox-check && /tmp/outbox-check
+```
+
+And the whole round trip, which edits a set with no signal, force quits, and proves the edit lands when signal returns. It runs against a throwaway copy of the database on its own port, so the backend you actually use is never touched:
+
+```bash
+./scripts/verify_outbox.sh
+```
+
+Both drive the shipping sources, so they fail if the queue drifts. `RAVE_API_BASE_URL` overrides the API URL at launch, which is how `verify_outbox.sh` points the client at a dead port.
 
 ### Physical device — home Wi‑Fi only
 

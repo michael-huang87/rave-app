@@ -223,6 +223,21 @@ def test_create_event_log_set_and_spend(client):
     assert detail["dollars_per_set"] == 60.5
 
 
+def test_creating_the_same_event_twice_converges(client):
+    """A phone that lost the response to a queued create replays it, and a double tap on Save
+    does the same thing, so the second post has to answer with the first row."""
+    body = {"show": "Replayed Show", "venue": "Warehouse", "start_date": "2099-02-02", "ticket": 40}
+    first = client.post("/events", json=body)
+    second = client.post("/events", json=body)
+    assert first.status_code == 201 and second.status_code == 201
+    assert first.json()["id"] == second.json()["id"]
+    assert len([e for e in client.get("/events").json() if e["show"] == "Replayed Show"]) == 1
+
+    client.patch(f"/events/{first.json()['id']}/spend", json={"ticket": 40, "travel": 10, "drinks_food_merch": 0})
+    replayed = client.post("/events", json=body)
+    assert replayed.json()["total"] == 50, "a replay must not roll spend back to the draft's numbers"
+
+
 def test_status_is_date_based(client):
     past = client.post("/events", json={"show": "Past Show", "start_date": "2020-01-01"})
     assert past.json()["status"] == "attended"

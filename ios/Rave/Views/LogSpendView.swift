@@ -49,12 +49,14 @@ struct LogSpendView: View {
         saving = true
         error = nil
         do {
-            _ = try await APIClient.shared.logSpend(
-                eventId: event.id,
-                spend: SpendDraft(
-                    ticket: Double(ticket) ?? 0,
-                    travel: Double(travel) ?? 0,
-                    drinksFoodMerch: Double(merch) ?? 0
+            try await APIClient.shared.submit(
+                .logSpend(
+                    eventId: event.id,
+                    spend: SpendDraft(
+                        ticket: Double(ticket) ?? 0,
+                        travel: Double(travel) ?? 0,
+                        drinksFoodMerch: Double(merch) ?? 0
+                    )
                 )
             )
             await onSaved()
