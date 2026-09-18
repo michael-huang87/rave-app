@@ -314,7 +314,7 @@ struct ScheduleDayLayout {
     }
 
     func hourLabel(_ minute: Int) -> String {
-        String(format: "%02d:00", (((minute + clockOffset) % 1440) + 1440) % 1440 / 60)
+        clockHourLabel((((minute + clockOffset) % 1440) + 1440) % 1440 / 60)
     }
 
     private static func clockMinutes(_ time: String?) -> Int? {
@@ -322,6 +322,27 @@ struct ScheduleDayLayout {
         guard parts.count == 2 else { return nil }
         return parts[0] * 60 + parts[1]
     }
+}
+
+/// Set times arrive as a wall clock "HH:MM" with no date attached, so they are reformatted
+/// directly rather than round-tripped through Date. A festival night runs past midnight, which is
+/// why the meridiem is never dropped to save width: 01:00 and 13:00 are both on the same page.
+func clockLabel(_ time: String?) -> String? {
+    let parts = (time ?? "").split(separator: ":").compactMap { Int($0) }
+    guard parts.count == 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
+    return String(format: "%d:%02d %@", hour12(parts[0]), parts[1], parts[0] < 12 ? "AM" : "PM")
+}
+
+/// The grid's hour gutter, which is always on the hour and wants the width back. Named apart from
+/// `ScheduleDayLayout.hourLabel` on purpose: same signature and the member would shadow it, which
+/// turns the call inside that method into infinite recursion.
+func clockHourLabel(_ hour24: Int) -> String {
+    "\(hour12(hour24)) \(hour24 < 12 ? "AM" : "PM")"
+}
+
+private func hour12(_ hour24: Int) -> Int {
+    let hour = hour24 % 12
+    return hour == 0 ? 12 : hour
 }
 
 struct MarkSeenDraft: Codable {

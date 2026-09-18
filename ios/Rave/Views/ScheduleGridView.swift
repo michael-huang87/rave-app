@@ -110,7 +110,7 @@ struct ScheduleGridView: View {
         let isPlanned = planned.contains(block.slot.id)
         return VStack(alignment: .leading, spacing: 1) {
             HStack(alignment: .top, spacing: 4) {
-                Text(block.slot.startTime ?? layout.hourLabel(block.start))
+                Text(clockLabel(block.slot.startTime) ?? layout.hourLabel(block.start))
                     .font(.caption2.monospacedDigit())
                 Spacer(minLength: 0)
                 if isSeen {
