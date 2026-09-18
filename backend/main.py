@@ -399,6 +399,9 @@ def get_event(event_id: str) -> dict:
 
 @app.post("/events", status_code=201)
 def create_event(body: EventIn) -> dict:
+    """The id is derived from the show, so posting the same one twice answers with the row that
+    already exists rather than an IntegrityError. A phone replaying a queued create after it lost
+    the response needs this to converge, and so does a double tap on Save."""
     eid = new_id("evt", body.show, body.start_date, body.venue)
     display = body.date_display or body.start_date or ""
     year = body.year
@@ -409,7 +412,8 @@ def create_event(body: EventIn) -> dict:
             """INSERT INTO events
                (id, show, venue, city, year, start_date, end_date, date_display,
                 ticket, travel, drinks_food_merch, source, source_tab)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(id) DO NOTHING""",
             (
                 eid,
                 body.show.strip(),
