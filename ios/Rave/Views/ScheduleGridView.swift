@@ -6,6 +6,8 @@ struct ScheduleGridView: View {
     let visible: Set<String>
     let planned: Set<String>
     let selected: Set<String>
+    /// Where now sits on this day's axis, or nil when the day on screen is not the one running.
+    var nowMinute: Int?
     var onTap: (ScheduleSlot) -> Void
 
     private let columnWidth: CGFloat = 118
@@ -39,6 +41,7 @@ struct ScheduleGridView: View {
                             HStack(alignment: .top, spacing: 0) {
                                 ForEach(columns, id: \.stage) { self.column($0) }
                             }
+                            nowLine
                         }
                     }
                     // The first hour label is drawn 6pt above the axis and would sit under the header.
@@ -137,6 +140,26 @@ struct ScheduleGridView: View {
         .onTapGesture { onTap(block.slot) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(block.slot.title), \(stage)\(isPlanned ? ", planned" : "")\(isSeen ? ", seen" : "")")
+    }
+
+    /// Drawn over the blocks rather than under them, because the set it crosses is the one you
+    /// are standing in and the line is no use hidden behind it.
+    @ViewBuilder
+    private var nowLine: some View {
+        if let nowMinute {
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(RaveTheme.accent)
+                    .frame(height: 1.5)
+                Circle()
+                    .fill(RaveTheme.accent)
+                    .frame(width: 7, height: 7)
+            }
+            .frame(width: columnWidth * CGFloat(columns.count), alignment: .leading)
+            .offset(y: offset(nowMinute))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 
     private func offset(_ minute: Int) -> CGFloat {
