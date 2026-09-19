@@ -32,6 +32,14 @@ private func show(_ id: String, _ start: String, _ end: String?) -> Event {
     )
 }
 
+private func slot(_ id: String, _ startTime: String, _ startMinute: Int) -> ScheduleSlot {
+    ScheduleSlot(
+        id: id, day: "2026-09-18", stage: "Prehistoric Stage", title: id, artists: [id],
+        startTime: startTime, endTime: nil, startMinute: startMinute, endMinute: nil,
+        sortIndex: 0, seen: false, setId: nil
+    )
+}
+
 @main
 struct FestivalModeCheck {
     static func main() {
@@ -94,6 +102,55 @@ struct FestivalModeCheck {
         check(FestivalMode.currentDay(in: days, now: at("2026-09-20", 3)) == "2026-09-19", "03:00 is still last night")
         check(FestivalMode.currentDay(in: days, now: at("2026-09-20", 7)) == "2026-09-20", "past 06:00 it rolls over")
         check(FestivalMode.currentDay(in: days, now: early) == nil, "before the schedule opens")
+
+        // Set times read as a clock, not a 24 hour string.
+        check(clockLabel("14:00") == "2:00 PM", "afternoon")
+        check(clockLabel("09:30") == "9:30 AM", "morning keeps no leading zero")
+        check(clockLabel("00:15") == "12:15 AM", "the small hours are 12, not 0")
+        check(clockLabel("12:00") == "12:00 PM", "noon is PM")
+        check(clockLabel("23:59") == "11:59 PM", "the last minute of the night")
+        check(clockLabel(nil) == nil && clockLabel("") == nil, "a slot with no time has no label")
+        check(clockLabel("24:00") == nil && clockLabel("9") == nil, "a time the server never sends is refused")
+        check(clockHourLabel(0) == "12 AM" && clockHourLabel(13) == "1 PM", "the hour gutter drops the minutes")
+
+        // Through the layout, because a free function and a method of the same name resolve
+        // differently here than at the call site inside ScheduleDayLayout.
+        let grid = ScheduleDayLayout(
+            schedule: Schedule(eventId: "e", days: ["2026-09-18"], slots: [
+                ScheduleSlot(id: "a", day: "2026-09-18", stage: "Prehistoric Stage", title: "Tynan",
+                             artists: ["Tynan"], startTime: "14:00", endTime: nil,
+                             startMinute: 840, endMinute: nil, sortIndex: 0, seen: false, setId: nil),
+            ]),
+            day: "2026-09-18",
+            stageOrder: ["Prehistoric Stage"]
+        )
+        check(grid?.hourLabel(840) == "2 PM", "the grid gutter labels its own axis without recursing")
+
+        // The now line. A festival day is anchored at the 06:00 rollover, so its axis runs
+        // 14:00 to 03:00 as one unbroken column and the clock has to be read onto it.
+        let night = ScheduleDayLayout(
+            schedule: Schedule(eventId: "e", days: ["2026-09-18"], slots: [
+                slot("a", "14:00", 480), slot("b", "03:00", 1260),
+            ]),
+            day: "2026-09-18",
+            stageOrder: ["Prehistoric Stage"]
+        )!
+        check(night.clockOffset == 360, "the axis is anchored at the 06:00 rollover")
+        check(night.axisMinute(clockMinutes: 14 * 60) == 480, "doors")
+        check(night.axisMinute(clockMinutes: 20 * 60 + 30) == 870, "mid evening")
+        check(night.axisMinute(clockMinutes: 23 * 60 + 59) == 1079, "the last minute before midnight")
+        check(night.axisMinute(clockMinutes: 0) == 1080, "midnight carries on down the same column")
+        check(night.axisMinute(clockMinutes: 3 * 60) == 1260, "the last set")
+        check(night.axisMinute(clockMinutes: 13 * 60 + 59) == nil, "a minute before doors draws no line")
+        // An open-ended last set is drawn an hour long, so the axis runs to 04:00 and the line
+        // can legitimately sit on its very last pixel.
+        check(night.end == 1320 && night.axisMinute(clockMinutes: 4 * 60) == 1320, "the bottom of the axis")
+        check(night.axisMinute(clockMinutes: 4 * 60 + 1) == nil, "a minute past it draws no line")
+        check(night.axisMinute(clockMinutes: 10 * 60) == nil, "the morning after draws no line")
+
+        var noon = DateComponents()
+        (noon.year, noon.month, noon.day, noon.hour, noon.minute) = (2026, 9, 18, 12, 30)
+        check(clockMinutes(of: cal.date(from: noon)!, calendar: cal) == 750, "a date reads as minutes past midnight")
 
         print("FestivalMode: \(checks) checks passed")
     }

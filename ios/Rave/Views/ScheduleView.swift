@@ -35,6 +35,7 @@ struct ScheduleView: View {
     @State private var loadError: String?
     @State private var syncError: String?
     @State private var syncing = false
+    @State private var now = Date()
 
     var body: some View {
         NavigationStack {
@@ -69,6 +70,9 @@ struct ScheduleView: View {
                 }
             }
             .task { await open() }
+            // A minute is as fine as the line can be read at this scale, and it keeps the grid
+            // from rebuilding for nothing while the phone is in a pocket.
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { now = $0 }
         }
     }
 
@@ -184,11 +188,19 @@ struct ScheduleView: View {
                 visible: Set(slots.map(\.id)),
                 planned: record.planned,
                 selected: record.selected,
+                nowMinute: nowMinute(record, layout: layout),
                 onTap: toggle
             )
         } else {
             list(slots, record: record)
         }
+    }
+
+    /// Only the day that is actually running gets a line. Two days of a festival cover the same
+    /// hours, so placing it by clock alone would draw a line through Sunday while you stand in Friday.
+    private func nowMinute(_ record: ScheduleRecord, layout: ScheduleDayLayout) -> Int? {
+        guard FestivalMode.currentDay(in: record.schedule.days, now: now) == day else { return nil }
+        return layout.axisMinute(clockMinutes: clockMinutes(of: now))
     }
 
     private func emptyReason(_ record: ScheduleRecord) -> String {
@@ -215,11 +227,11 @@ struct ScheduleView: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(StagePalette.color(slot.stageKey, in: stageOrder))
                 .frame(width: 4)
-            Text(slot.startTime ?? "")
+            Text(clockLabel(slot.startTime) ?? "")
                 .font(.subheadline)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .frame(width: 46, alignment: .leading)
+                .frame(width: 74, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(slot.title)
                 Text(slot.stageKey)
