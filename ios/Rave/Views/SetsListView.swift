@@ -42,8 +42,11 @@ struct SetsListView: View {
                 CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
             }
             .task { await reload() }
-            .refreshable { await reload() }
+            .refreshable { await reload(force: true) }
             .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+                Task { await reload() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: LocalLog.changed)) { _ in
                 Task { await reload() }
             }
         }
@@ -114,19 +117,22 @@ struct SetsListView: View {
     }
 
     @MainActor
-    private func reload() async {
-        if sets.isEmpty, let hit = LastReadStore.shared.load([SetEntry].self, key: .sets) {
-            sets = hit.payload
-            cachedAt = hit.savedAt
-            fromCache = false
+    private func reload(force: Bool = false) async {
+        if let local = await APIClient.shared.localSets() {
+            sets = local.value
+            cachedAt = local.cachedAt
             loading = false
-            refreshing = true
         } else if sets.isEmpty {
             loading = true
-            refreshing = false
-        } else {
-            refreshing = true
         }
+        guard force || NetworkRestored.isOnline else {
+            error = sets.isEmpty ? "No internet connection." : nil
+            fromCache = !sets.isEmpty
+            loading = false
+            refreshing = false
+            return
+        }
+        refreshing = !sets.isEmpty
         error = nil
         do {
             let read = try await APIClient.shared.sets()

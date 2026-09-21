@@ -596,6 +596,48 @@ def test_marking_the_same_slots_seen_twice_is_idempotent(client):
     assert slots[0]["artists"] == ["Excision", "SLANDER"]
 
 
+def test_marking_a_slot_seen_moves_sets_stats_and_recap(client):
+    """The server side of a festival tick: the same write the phone replays when it is back online."""
+    eid = client.post(
+        "/events",
+        json={
+            "show": "Offline Fest",
+            "venue": "Legend Valley",
+            "city": "Thornville",
+            "start_date": "2026-09-18",
+            "end_date": "2026-09-19",
+            "ticket": 100,
+        },
+    ).json()["id"]
+    client.put(
+        f"/events/{eid}/schedule",
+        json={"slots": [{"day": "2026-09-19", "stage": "Main", "title": "Excision", "start_time": "22:00"}]},
+    )
+    slot_id = client.get(f"/events/{eid}/schedule").json()["slots"][0]["id"]
+    before_sets = client.get("/recap").json()["all_time"]["sets"]
+
+    seen = client.post(f"/events/{eid}/schedule/seen", json={"slot_ids": [slot_id]})
+    assert seen.status_code == 201
+    assert [s["title"] for s in seen.json()["created"]] == ["Excision"]
+
+    sets = client.get("/sets").json()
+    assert any(s["event_id"] == eid and s["title"] == "Excision" and s["date"] == "2026-09-19" for s in sets)
+    detail = client.get(f"/events/{eid}").json()
+    assert detail["sets_logged"] == 1
+    assert detail["dollars_per_set"] == 100
+    artists = {a["name"]: a["count"] for a in client.get("/stats").json()["artists"]}
+    assert artists["Excision"] == 1
+    recap = client.get("/recap").json()["all_time"]
+    assert recap["sets"] == before_sets + 1
+    assert recap["spend"] == 100
+
+    set_id = detail["sets"][0]["id"]
+    assert client.delete(f"/sets/{set_id}").status_code == 204
+    assert client.get(f"/events/{eid}").json()["sets_logged"] == 0
+    assert client.get("/recap").json()["all_time"]["sets"] == before_sets
+    assert "Excision" not in {a["name"] for a in client.get("/stats").json()["artists"]}
+
+
 def test_unmarking_a_slot_is_deleting_its_set(client):
     eid = _festival(client)
     client.put(

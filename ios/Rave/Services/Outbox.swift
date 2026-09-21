@@ -255,9 +255,9 @@ actor Outbox {
     var count: Int { queue.count }
     var snapshot: OutboxSnapshot { OutboxSnapshot(queue.map(\.write)) }
 
-    func enqueue(_ write: PendingWrite) {
+    func enqueue(_ write: PendingWrite) async {
         queue.append(QueuedWrite(write: write))
-        persist()
+        await persist()
     }
 
     /// Sends in the order the user made the writes and stops at the first one that cannot go,
@@ -284,7 +284,7 @@ actor Outbox {
             }
             queue.removeFirst()
             sent += 1
-            persist()
+            await persist()
         }
         return sent
     }
@@ -308,13 +308,15 @@ actor Outbox {
         }
     }
 
-    private func persist() {
+    private func persist() async {
         if let data = try? encoder.encode(queue) {
             try? data.write(to: fileURL, options: .atomic)
         }
         let waiting = queue.count
+        await ReadRevision.shared.bump()
         Task { @MainActor in
             NotificationCenter.default.post(name: Outbox.changed, object: nil, userInfo: ["count": waiting])
+            NotificationCenter.default.post(name: LocalLog.changed, object: nil)
         }
     }
 }

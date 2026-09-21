@@ -1,8 +1,9 @@
 import Foundation
 
 // Compiled against the shipping Services/Outbox.swift, so it fails if the queue or the overlay drifts:
-//   swiftc -parse-as-library ios/Rave/Models/RaveModels.swift ios/Rave/Services/LastReadStore.swift \
-//     ios/Rave/Services/APIClient.swift ios/Rave/Services/Outbox.swift ios/OutboxCheck.swift \
+//   swiftc -swift-version 5 -parse-as-library ios/Rave/Models/RaveModels.swift \
+//     ios/Rave/Services/LastReadStore.swift ios/Rave/Services/Outbox.swift ios/Rave/Services/LocalLog.swift \
+//     ios/Rave/Services/APIClient.swift ios/Rave/Services/ScheduleStore.swift ios/OutboxCheck.swift \
 //     -o /tmp/outbox-check && /tmp/outbox-check
 
 private var checks = 0

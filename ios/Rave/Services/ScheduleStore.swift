@@ -57,19 +57,46 @@ actor ScheduleStore {
         return try? decoder.decode(ScheduleRecord.self, from: data)
     }
 
-    func save(_ record: ScheduleRecord, for eventId: String) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try encoder.encode(record).write(to: url(for: eventId), options: .atomic)
+    func allRecords() -> [ScheduleRecord] {
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil
+        ) else { return [] }
+        return urls.compactMap { url in
+            guard url.pathExtension == "json", let data = try? Data(contentsOf: url) else { return nil }
+            return try? decoder.decode(ScheduleRecord.self, from: data)
+        }
     }
 
-    func sync(eventId: String) async throws -> ScheduleRecord {
-        let local = record(for: eventId)
+    func pendingSlotCount() -> Int {
+        allRecords().reduce(0) { $0 + $1.pendingCount }
+    }
 
-        if let additions = local?.pendingAdditions, !additions.isEmpty {
+    func eventIdsWithPending() -> [String] {
+        allRecords().filter { $0.pendingCount > 0 }.map(\.schedule.eventId)
+    }
+
+    func save(_ record: ScheduleRecord, for eventId: String) async throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try encoder.encode(record).write(to: url(for: eventId), options: .atomic)
+        await ReadRevision.shared.bump()
+        Task { @MainActor in
+            NotificationCenter.default.post(name: LocalLog.changed, object: nil)
+        }
+    }
+
+    /// Pushes the seen-set delta, then pulls. Additions and removals are re-read after each await
+    /// so a tick during the request is not overwritten by the snapshot from before it. The pull's
+    /// seen map becomes `syncedSeen`; the phone's current selection is kept, which is what leaves
+    /// a tick that landed mid-sync still pending instead of dropped.
+    func sync(eventId: String) async throws -> ScheduleRecord {
+        let initial = record(for: eventId)
+
+        if let additions = initial?.pendingAdditions, !additions.isEmpty {
             _ = try await api.markSlotsSeen(eventId: eventId, slotIds: additions.sorted())
         }
-        for slotId in local?.pendingRemovals.sorted() ?? [] {
-            guard let setId = local?.syncedSeen[slotId] else { continue }
+        let afterAdd = record(for: eventId) ?? initial
+        for slotId in (afterAdd?.pendingRemovals ?? []).sorted() {
+            guard let setId = afterAdd?.syncedSeen[slotId] else { continue }
             do {
                 try await api.deleteSet(id: setId)
             } catch APIError.http(404) {
@@ -81,13 +108,15 @@ actor ScheduleStore {
         let serverSeen = fresh.slots.reduce(into: [String: String]()) { seen, slot in
             if let setId = slot.setId, slot.seen { seen[slot.id] = setId }
         }
+        let latest = record(for: eventId)
         let updated = ScheduleRecord(
             schedule: fresh,
-            planned: local?.planned ?? [],
-            selected: local?.selected ?? Set(serverSeen.keys),
-            syncedSeen: serverSeen
+            planned: latest?.planned ?? initial?.planned ?? [],
+            selected: latest?.selected ?? initial?.selected ?? Set(serverSeen.keys),
+            syncedSeen: serverSeen,
+            updatedAt: latest?.updatedAt ?? Date()
         )
-        try save(updated, for: eventId)
+        try await save(updated, for: eventId)
         return updated
     }
 

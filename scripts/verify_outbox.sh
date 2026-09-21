@@ -22,11 +22,13 @@ for _ in $(seq 1 40); do
     sleep 0.25
 done
 
-swiftc -parse-as-library \
+swiftc -swift-version 5 -parse-as-library \
     ios/Rave/Models/RaveModels.swift \
     ios/Rave/Services/LastReadStore.swift \
-    ios/Rave/Services/APIClient.swift \
     ios/Rave/Services/Outbox.swift \
+    ios/Rave/Services/LocalLog.swift \
+    ios/Rave/Services/APIClient.swift \
+    ios/Rave/Services/ScheduleStore.swift \
     ios/OutboxLiveCheck.swift \
     -o "$BIN"
 

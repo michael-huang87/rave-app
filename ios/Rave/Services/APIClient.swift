@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 enum APIError: LocalizedError {
     case badURL
@@ -32,11 +35,16 @@ actor APIClient: OutboxSyncing {
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
         // Fail fast so we can show last-read cache instead of hanging offline.
+        // Linux exposes this as read-only, and its default is already false.
+        #if !os(Linux)
         config.waitsForConnectivity = false
+        #endif
         config.timeoutIntervalForRequest = 15
         config.allowsCellularAccess = true
+        #if !os(Linux)
         config.allowsExpensiveNetworkAccess = true
         config.allowsConstrainedNetworkAccess = true
+        #endif
         return URLSession(configuration: config)
     }()
 
@@ -121,20 +129,23 @@ actor APIClient: OutboxSyncing {
         switch write {
         case .createEvent(_, let draft):
             let event: Event = try await send("/events", method: "POST", body: draft)
-            store.save(event, key: .event(event.id))
+            absorb(event: event)
             return event.id
         case .updateEvent(let id, let patch):
             let event: Event = try await send("/events/\(id)", method: "PATCH", body: patch)
-            store.save(event, key: .event(event.id))
+            absorb(event: event)
         case .logSpend(let eventId, let spend):
             let event: Event = try await send("/events/\(eventId)/spend", method: "PATCH", body: spend)
-            store.save(event, key: .event(event.id))
+            absorb(event: event)
         case .bulkAddSets(let eventId, _, let draft):
-            let _: BulkSetsResponse = try await send("/events/\(eventId)/sets/bulk", method: "POST", body: draft)
+            let response: BulkSetsResponse = try await send("/events/\(eventId)/sets/bulk", method: "POST", body: draft)
+            absorb(sets: response.created)
         case .updateSet(let id, let patch):
-            let _: SetEntry = try await send("/sets/\(id)", method: "PATCH", body: patch)
+            let updated: SetEntry = try await send("/sets/\(id)", method: "PATCH", body: patch)
+            absorb(sets: [updated])
         case .deleteSet(let id):
             try await deleteSet(id: id)
+            forgetSet(id)
         }
         return nil
     }
@@ -148,6 +159,74 @@ actor APIClient: OutboxSyncing {
     @discardableResult
     func flushOutbox() async -> Int {
         await Outbox.shared.flush(using: self)
+    }
+
+    /// Pushes the outbox, then every festival seen-set that is still ahead of the server, then
+    /// pulls the snapshots those screens derive from. A failed push leaves its queue in place.
+    func drainPendingWrites() async {
+        let sent = await flushOutbox()
+        var synced = 0
+        for id in await ScheduleStore.shared.eventIdsWithPending() {
+            if (try? await ScheduleStore.shared.sync(eventId: id)) != nil { synced += 1 }
+        }
+        guard sent > 0 || synced > 0 else { return }
+        await refreshServerSnapshots()
+        Task { @MainActor in
+            NotificationCenter.default.post(name: LocalLog.changed, object: nil)
+        }
+    }
+
+    /// The sets list with unsent writes and unticked-or-ticked slots laid on, or nil if this
+    /// phone has never loaded sets.
+    func localSets() async -> ReadResult<[SetEntry]>? {
+        guard let hit = store.load([SetEntry].self, key: .sets) else { return nil }
+        let events = store.load([Event].self, key: .events)?.payload ?? []
+        let log = await assembled(events: events, sets: hit.payload, setsAreComplete: true)
+        return ReadResult(value: log.sets, fromCache: true, cachedAt: hit.savedAt)
+    }
+
+    func localEvents() async -> ReadResult<[Event]>? {
+        guard let hit = store.load([Event].self, key: .events) else { return nil }
+        let setsHit = store.load([SetEntry].self, key: .sets)
+        let log = await assembled(events: hit.payload, sets: setsHit?.payload ?? [], setsAreComplete: setsHit != nil)
+        return ReadResult(value: log.events, fromCache: true, cachedAt: hit.savedAt)
+    }
+
+    func localEvent(id: String) async -> ReadResult<Event>? {
+        guard let hit = store.load(Event.self, key: .event(id)) else { return nil }
+        let pending = await Outbox.shared.snapshot
+        let schedules = await ScheduleStore.shared.allRecords()
+        let sibling = store.load([SetEntry].self, key: .sets)?.payload
+        let event = LocalLog.detail(hit.payload, siblingSets: sibling, pending: pending, schedules: schedules)
+        return ReadResult(value: event, fromCache: true, cachedAt: hit.savedAt)
+    }
+
+    func localStats() async -> ReadResult<Stats>? {
+        let saved = store.load(Stats.self, key: .stats)
+        if let setsHit = store.load([SetEntry].self, key: .sets) {
+            let events = store.load([Event].self, key: .events)?.payload ?? []
+            let pending = await Outbox.shared.snapshot
+            let log = await assembled(events: events, sets: setsHit.payload, setsAreComplete: true)
+            if saved == nil || !pending.isEmpty || log.sets != setsHit.payload {
+                return ReadResult(value: log.stats(), fromCache: true, cachedAt: saved?.savedAt)
+            }
+        }
+        if let saved { return ReadResult(value: saved.payload, fromCache: true, cachedAt: saved.savedAt) }
+        return nil
+    }
+
+    func localRecap() async -> ReadResult<Recap>? {
+        let saved = store.load(Recap.self, key: .recap)
+        if let setsHit = store.load([SetEntry].self, key: .sets),
+           let eventsHit = store.load([Event].self, key: .events) {
+            let pending = await Outbox.shared.snapshot
+            let log = await assembled(events: eventsHit.payload, sets: setsHit.payload, setsAreComplete: true)
+            if saved == nil || !pending.isEmpty || log.sets != setsHit.payload {
+                return ReadResult(value: log.recap(asOf: saved?.payload.asOf), fromCache: true, cachedAt: saved?.savedAt)
+            }
+        }
+        if let saved { return ReadResult(value: saved.payload, fromCache: true, cachedAt: saved.savedAt) }
+        return nil
     }
 
     func schedule(eventId: String) async throws -> Schedule {
@@ -166,32 +245,113 @@ actor APIClient: OutboxSyncing {
         return url
     }
 
-    /// Network refresh for a last-read key. Screens paint `LastReadStore.shared` first so this
-    /// wait never gates the UI when a cache already exists. On failure, serve that cache.
+    /// Network refresh for a last-read key. Screens paint the local projection first so this
+    /// wait never gates the UI when a cache already exists. On failure, serve that projection.
+    /// A GET that started before a local write is not saved: it would put the pre-write snapshot
+    /// back under a queue that has already moved on.
     private func cachedGet<T: Codable>(_ path: String, query: [URLQueryItem] = [], key: LastReadKey) async throws -> ReadResult<T> {
-        let pending = await Outbox.shared.snapshot
+        let token = await ReadRevision.shared.current
         do {
             let live: T = try await get(path, query: query)
-            store.save(live, key: key)
-            return ReadResult(value: overlay(live, pending), fromCache: false, cachedAt: nil)
+            let current = await ReadRevision.shared.current
+            if current == token { store.save(live, key: key) }
+            if let projected = await projected(key) as? T {
+                let stamped = store.load(T.self, key: key)?.savedAt
+                return ReadResult(value: projected, fromCache: current != token, cachedAt: current != token ? stamped : nil)
+            }
+            return ReadResult(value: live, fromCache: false, cachedAt: nil)
         } catch {
-            if let hit = store.load(T.self, key: key) {
-                return ReadResult(value: overlay(hit.payload, pending), fromCache: true, cachedAt: hit.savedAt)
+            if let projected = await projected(key) as? T {
+                return ReadResult(value: projected, fromCache: true, cachedAt: store.load(T.self, key: key)?.savedAt)
             }
             throw error
         }
     }
 
-    /// Last-read holds only what the server said, so an unsent write has to be laid back over it
-    /// for the screen that made the edit to show it. Recap and stats are server-side aggregates,
-    /// so they stay as last read until the queue drains.
-    private func overlay<T>(_ value: T, _ pending: OutboxSnapshot) -> T {
-        guard !pending.isEmpty else { return value }
-        switch value {
-        case let events as [Event]: return pending.apply(to: events) as? T ?? value
-        case let event as Event: return pending.apply(to: event) as? T ?? value
-        case let sets as [SetEntry]: return pending.apply(to: sets) as? T ?? value
-        default: return value
+    private func projected(_ key: LastReadKey) async -> Any? {
+        switch key {
+        case .sets: return await localSets()?.value
+        case .events: return await localEvents()?.value
+        case .event(let id): return await localEvent(id: id)?.value
+        case .stats: return await localStats()?.value
+        case .recap: return await localRecap()?.value
+        }
+    }
+
+    private func assembled(events: [Event], sets: [SetEntry], setsAreComplete: Bool) async -> LocalLog {
+        let pending = await Outbox.shared.snapshot
+        let schedules = await ScheduleStore.shared.allRecords()
+        return LocalLog.make(
+            events: events,
+            sets: sets,
+            pending: pending,
+            schedules: schedules,
+            setsAreComplete: setsAreComplete
+        )
+    }
+
+    /// Pulls the four snapshots after a push. Bumps first so a GET already in flight cannot
+    /// write the older body over this one.
+    func refreshServerSnapshots() async {
+        await ReadRevision.shared.bump()
+        let token = await ReadRevision.shared.current
+        await storeGet([Event].self, "/events", .events, token)
+        await storeGet([SetEntry].self, "/sets", .sets, token)
+        await storeGet(Recap.self, "/recap", .recap, token)
+        await storeGet(Stats.self, "/stats", .stats, token)
+    }
+
+    private func storeGet<T: Codable>(_ type: T.Type, _ path: String, _ key: LastReadKey, _ token: Int) async {
+        guard let live: T = try? await get(path) else { return }
+        guard await ReadRevision.shared.current == token else { return }
+        store.save(live, key: key)
+    }
+
+    /// The write response is what the server just said. Folding it into last-read is what keeps
+    /// the row on screen after its queue entry is removed, before the next full GET.
+    private func absorb(event: Event) {
+        var stored = event
+        if stored.sets == nil, let previous = store.load(Event.self, key: .event(event.id))?.payload {
+            stored.sets = previous.sets
+        }
+        store.save(stored, key: .event(event.id))
+        guard var events = store.load([Event].self, key: .events)?.payload else { return }
+        if let i = events.firstIndex(where: { $0.id == event.id }) {
+            let nested = events[i].sets
+            events[i] = stored
+            if events[i].sets == nil { events[i].sets = nested }
+        } else {
+            events.insert(stored, at: 0)
+        }
+        store.save(events, key: .events)
+    }
+
+    private func absorb(sets incoming: [SetEntry]) {
+        guard !incoming.isEmpty else { return }
+        if let existing = store.load([SetEntry].self, key: .sets)?.payload {
+            store.save(LocalLog.absorb(incoming, into: existing), key: .sets)
+        }
+        for (eventId, rows) in Dictionary(grouping: incoming, by: \.eventId) {
+            guard var event = store.load(Event.self, key: .event(eventId))?.payload, event.sets != nil else { continue }
+            event.sets = LocalLog.absorb(rows, into: event.sets ?? [])
+            event.setsLogged = event.sets?.count ?? event.setsLogged
+            event.refreshTotals()
+            store.save(event, key: .event(eventId))
+        }
+    }
+
+    private func forgetSet(_ id: String) {
+        let eventId = store.load([SetEntry].self, key: .sets)?.payload.first { $0.id == id }?.eventId
+        if var sets = store.load([SetEntry].self, key: .sets)?.payload {
+            sets.removeAll { $0.id == id }
+            store.save(sets, key: .sets)
+        }
+        guard let eventId, var event = store.load(Event.self, key: .event(eventId))?.payload else { return }
+        event.sets?.removeAll { $0.id == id }
+        if event.sets != nil {
+            event.setsLogged = event.sets?.count ?? event.setsLogged
+            event.refreshTotals()
+            store.save(event, key: .event(eventId))
         }
     }
 

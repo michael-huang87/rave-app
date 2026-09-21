@@ -50,8 +50,11 @@ struct EventListView: View {
                 CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
             }
             .task { await reload() }
-            .refreshable { await reload() }
+            .refreshable { await reload(force: true) }
             .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+                Task { await reload() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: LocalLog.changed)) { _ in
                 Task { await reload() }
             }
         }
@@ -130,19 +133,22 @@ struct EventListView: View {
     }
 
     @MainActor
-    private func reload() async {
-        if events.isEmpty, let hit = LastReadStore.shared.load([Event].self, key: .events) {
-            events = hit.payload
-            cachedAt = hit.savedAt
-            fromCache = false
+    private func reload(force: Bool = false) async {
+        if let local = await APIClient.shared.localEvents() {
+            events = local.value
+            cachedAt = local.cachedAt
             loading = false
-            refreshing = true
         } else if events.isEmpty {
             loading = true
-            refreshing = false
-        } else {
-            refreshing = true
         }
+        guard force || NetworkRestored.isOnline else {
+            error = events.isEmpty ? "No internet connection." : nil
+            fromCache = !events.isEmpty
+            loading = false
+            refreshing = false
+            return
+        }
+        refreshing = !events.isEmpty
         error = nil
         do {
             let read = try await APIClient.shared.events()
