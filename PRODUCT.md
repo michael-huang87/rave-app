@@ -9,7 +9,7 @@ place by making logging faster rather than by helping you discover anything. See
 
 ## Offline
 
-New features work offline the same way logging does. A local write updates Sets, Stats, and Recap — and any screen that shows the same data — immediately, and reconciles with the server when the connection returns. If a feature cannot work that way, stop and confirm the architecture with Chamiel before shipping an online-only design.
+New features work offline the same way as the local-log path. A local write updates Sets, Stats, and Recap — and any screen that shows the same data — immediately, and reconciles with the server when the connection returns. If a feature cannot work that way, confirm the architecture with Chamiel before shipping an online-only design.
 
 ## Sheet mapping
 

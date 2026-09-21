@@ -8,7 +8,7 @@ v1 is a **working skeleton** with a real data model imported from the existing G
 
 | Path | What it is |
 | --- | --- |
-| `PRODUCT.md` | v1 job and sheet → app mapping |
+| `PRODUCT.md` | v1 job, sheet → app mapping, and the offline rule for new features |
 | `data/README.md` | How to download the sheet and build a local snapshot |
 | `scripts/clean_sheet.py` | Writes `data/*.json` on your machine |
 | `backend/` | FastAPI + SQLite, seeds from the local snapshot if present |
