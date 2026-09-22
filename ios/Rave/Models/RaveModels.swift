@@ -1,4 +1,24 @@
+import Foundation
+#if canImport(SwiftUI)
 import SwiftUI
+#else
+// The offline-log checks compile on Linux, where SwiftUI is not there. The real app still
+// uses SwiftUI; these stand-ins exist only so the data types type-check.
+struct Color: Equatable {
+    init(red: Double, green: Double, blue: Double, opacity: Double = 1) {}
+    init(white: Double) {}
+    static let black = Color(white: 0)
+    static let white = Color(white: 1)
+    static let secondary = Color(white: 0.5)
+}
+
+struct EdgeInsets: Equatable {
+    var top: Double
+    var leading: Double
+    var bottom: Double
+    var trailing: Double
+}
+#endif
 
 enum RaveTheme {
     static let accent = Color(red: 0.92, green: 0.28, blue: 0.72)
@@ -258,13 +278,14 @@ enum StagePalette {
 
 extension Color {
     init(hex: UInt32) {
-        self.init(
-            .sRGB,
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255,
-            opacity: 1
-        )
+        let red = Double((hex >> 16) & 0xFF) / 255
+        let green = Double((hex >> 8) & 0xFF) / 255
+        let blue = Double(hex & 0xFF) / 255
+        #if canImport(SwiftUI)
+        self.init(.sRGB, red: red, green: green, blue: blue, opacity: 1)
+        #else
+        self.init(red: red, green: green, blue: blue)
+        #endif
     }
 }
 

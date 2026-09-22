@@ -70,6 +70,9 @@ struct ScheduleView: View {
                 }
             }
             .task { await open() }
+            .onReceive(NotificationCenter.default.publisher(for: LocalLog.changed)) { _ in
+                Task { await adoptIfNewer() }
+            }
             // A minute is as fine as the line can be read at this scale, and it keeps the grid
             // from rebuilding for nothing while the phone is in a pocket.
             .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { now = $0 }
@@ -271,7 +274,23 @@ struct ScheduleView: View {
         }
         updated.updatedAt = Date()
         record = updated
-        Task { try? await ScheduleStore.shared.save(updated, for: event.id) }
+        let eventId = event.id
+        let logging = mode == .seen
+        Task {
+            try? await ScheduleStore.shared.save(updated, for: eventId)
+            // Plan stays on the phone. Seen is pushed when there is a path; offline it stays queued.
+            guard logging, NetworkRestored.isOnline else { return }
+            await APIClient.shared.drainPendingWrites()
+        }
+    }
+
+    /// A sync that finishes after this screen painted replaces the row, but not a tick that has
+    /// not been written yet.
+    @MainActor
+    private func adoptIfNewer() async {
+        guard let fresh = await ScheduleStore.shared.record(for: event.id) else { return }
+        if let record, fresh.updatedAt < record.updatedAt { return }
+        adopt(fresh)
     }
 
     @MainActor

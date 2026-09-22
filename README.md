@@ -8,7 +8,7 @@ v1 is a **working skeleton** with a real data model imported from the existing G
 
 | Path | What it is |
 | --- | --- |
-| `PRODUCT.md` | v1 job and sheet → app mapping |
+| `PRODUCT.md` | v1 job, sheet → app mapping, and the offline rule for new features |
 | `data/README.md` | How to download the sheet and build a local snapshot |
 | `scripts/clean_sheet.py` | Writes `data/*.json` on your machine |
 | `backend/` | FastAPI + SQLite, seeds from the local snapshot if present |
@@ -104,17 +104,33 @@ category that regresses is visible.
 2. Open `ios/Rave.xcodeproj` in Xcode (iOS 17+).
 3. Simulator talks to `http://127.0.0.1:8000`. On a device, set `APIBaseURL` in `ios/Rave/Info.plist` to your Mac's API URL (see below).
 4. After a successful load, the app writes last-read JSON under Application Support `Rave/LastRead/` (events list, event detail, sets, recap, stats). Opening those screens paints the cache immediately and refreshes in the background; a full-screen spinner only appears when that screen has never been loaded. Offline or unreachable backend keeps the cache on screen with an "Offline — last loaded data" banner. Pull to refresh or wait for the path to come back; both refetch and update the cache.
-5. Edits work with no signal. A save that cannot reach the API goes into a durable outbox under Application Support `Outbox.json`, and the screens lay the queue over last-read so the edit you just made is the one you see. A banner counts what is waiting. The queue drains in the order you typed it when the path comes back, the app is reopened, or the API becomes reachable again, and it survives a force quit. Recap and Stats are server-side aggregates, so they stay as last read until the queue drains.
+5. Edits work with no signal. A save that cannot reach the API goes into a durable outbox under Application Support `Outbox.json`. Festival seen/unseen ticks are a second queue on the schedule file: the selection is the intent, and `syncedSeen` is what the server has acked. Sets, the show list, Stats, and Recap are a projection of last-read plus both queues, so a tick or a typed edit shows up on those screens immediately. A banner counts what is waiting (outbox rows plus unticked/ticked slots). When the path comes back, the app is reopened, or a seen tick is made while online, the outbox drains in typed order and then each pending schedule pushes additions, then removals, then pulls. A dropped connection leaves the rest queued. A 4xx other than 408/429 is dropped so one rejected write cannot wedge the queue. Retrying is safe: spend and edits assign, bulk-add skips titles already on the night, the server skips a slot it already logged, and deleting a missing set is a no-op. After the pull, server-acked slot ids replace `syncedSeen` and last-read is refreshed; anything still pending stays on screen. That is last-write-wins for one person, not a multi-device merge. Both queues survive a force quit.
 6. Do not submit to App Store Connect.
 
-This Linux VM cannot simulator-run iOS. Cache file layout and cache-first refresh are covered by `tests/test_last_read_cache.py`. On a Mac: load online, kill the app, reopen Shows / a show / Recap / Stats — last-read should appear before the network returns, then update. Airplane mode should keep that cache plus the offline banner.
+This Linux VM cannot simulator-run iOS. Cache file layout and cache-first refresh are covered by `tests/test_last_read_cache.py`. On a Mac: load online once, then airplane mode. Mark a set seen on the festival schedule (and unmark it). Sets, Stats, and Recap update immediately, and the banner counts the tick, with no round trip. Leave airplane mode or reopen the app: the tick is pushed, last-read refreshes, and the banner clears. A typed set or a spend edit moves those same screens the same way.
 
-The outbox has two checks that need no simulator. The queue and the overlay:
+Checks that need no simulator. The local projection (a seen tick updates sets, stats, and recap with no network, and the seen queue drains when the API answers):
 
 ```bash
-swiftc -parse-as-library ios/Rave/Models/RaveModels.swift ios/Rave/Services/LastReadStore.swift \
-  ios/Rave/Services/APIClient.swift ios/Rave/Services/Outbox.swift ios/OutboxCheck.swift \
-  -o /tmp/outbox-check && /tmp/outbox-check
+./scripts/verify_local_log.sh
+```
+
+Or the same compile directly:
+
+```bash
+swiftc -swift-version 5 -parse-as-library ios/Rave/Models/RaveModels.swift \
+  ios/Rave/Services/LastReadStore.swift ios/Rave/Services/Outbox.swift ios/Rave/Services/LocalLog.swift \
+  ios/Rave/Services/APIClient.swift ios/Rave/Services/ScheduleStore.swift \
+  ios/LocalLogCheck.swift -o /tmp/local-log-check && /tmp/local-log-check
+```
+
+The queue and the overlay:
+
+```bash
+swiftc -swift-version 5 -parse-as-library ios/Rave/Models/RaveModels.swift \
+  ios/Rave/Services/LastReadStore.swift ios/Rave/Services/Outbox.swift ios/Rave/Services/LocalLog.swift \
+  ios/Rave/Services/APIClient.swift ios/Rave/Services/ScheduleStore.swift \
+  ios/OutboxCheck.swift -o /tmp/outbox-check && /tmp/outbox-check
 ```
 
 And the whole round trip, which edits a set with no signal, force quits, and proves the edit lands when signal returns. It runs against a throwaway copy of the database on its own port, so the backend you actually use is never touched:

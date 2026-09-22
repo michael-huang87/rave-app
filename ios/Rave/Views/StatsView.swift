@@ -47,8 +47,11 @@ struct StatsView: View {
                 CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
             }
             .task { await load() }
-            .refreshable { await load() }
+            .refreshable { await load(force: true) }
             .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+                Task { await load() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: LocalLog.changed)) { _ in
                 Task { await load() }
             }
             .navigationDestination(for: StatList.self) { list in
@@ -72,16 +75,19 @@ struct StatsView: View {
     }
 
     @MainActor
-    private func load() async {
-        if stats == nil, let hit = LastReadStore.shared.load(Stats.self, key: .stats) {
-            stats = hit.payload
-            cachedAt = hit.savedAt
-            fromCache = false
-            refreshing = true
+    private func load(force: Bool = false) async {
+        if let local = await APIClient.shared.localStats() {
+            stats = local.value
+            cachedAt = local.cachedAt
             error = nil
-        } else {
-            refreshing = stats != nil
         }
+        guard force || NetworkRestored.isOnline else {
+            error = stats == nil ? "No internet connection." : nil
+            fromCache = stats != nil
+            refreshing = false
+            return
+        }
+        refreshing = stats != nil
         do {
             let read = try await APIClient.shared.stats()
             stats = read.value

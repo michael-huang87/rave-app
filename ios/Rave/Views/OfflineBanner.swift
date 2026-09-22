@@ -84,9 +84,16 @@ struct CacheStatusBar: View {
                 RefreshingBanner()
             }
         }
-        .task { pending = await Outbox.shared.count }
-        .onReceive(NotificationCenter.default.publisher(for: Outbox.changed)) { note in
-            pending = note.userInfo?["count"] as? Int ?? 0
+        .task { await refreshPending() }
+        .onReceive(NotificationCenter.default.publisher(for: Outbox.changed)) { _ in
+            Task { await refreshPending() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: LocalLog.changed)) { _ in
+            Task { await refreshPending() }
+        }
+    }
+
+    private func refreshPending() async {
+        pending = await Outbox.shared.count + ScheduleStore.shared.pendingSlotCount()
     }
 }

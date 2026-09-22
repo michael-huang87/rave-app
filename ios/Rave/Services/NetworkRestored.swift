@@ -11,6 +11,14 @@ enum NetworkRestored {
     private static var wasOnline = true
     private static var started = false
 
+    /// The last path the monitor reported. Starts optimistic so a launch with a signal does not
+    /// wait for the first callback before it may sync.
+    static var isOnline: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return wasOnline
+    }
+
     static func start() {
         lock.lock()
         if started {

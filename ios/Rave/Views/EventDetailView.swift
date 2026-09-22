@@ -69,6 +69,9 @@ struct EventDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
             Task { await reload() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: LocalLog.changed)) { _ in
+            Task { await reload() }
+        }
     }
 
     private func header(_ event: Event) -> some View {
@@ -210,16 +213,21 @@ struct EventDetailView: View {
     }
 
     @MainActor
-    private func reload() async {
-        if event == nil, let hit = LastReadStore.shared.load(Event.self, key: .event(eventId)) {
-            event = hit.payload
-            cachedAt = hit.savedAt
-            fromCache = false
-            refreshing = true
+    private func reload(force: Bool = false) async {
+        if let local = await APIClient.shared.localEvent(id: eventId) {
+            event = local.value
+            cachedAt = local.cachedAt
             error = nil
-        } else if event != nil {
-            refreshing = true
         }
+        guard force || NetworkRestored.isOnline else {
+            error = event == nil ? "No internet connection." : nil
+            fromCache = event != nil
+            refreshing = false
+            let cached = await ScheduleStore.shared.record(for: eventId)?.schedule.slots.count ?? 0
+            if cached > 0 { scheduleSlots = cached }
+            return
+        }
+        refreshing = event != nil
         async let loaded = APIClient.shared.event(id: eventId)
         async let slots = APIClient.shared.schedule(eventId: eventId).slots.count
         do {

@@ -49,9 +49,12 @@ struct RecapView: View {
                 CacheStatusBar(fromCache: fromCache, cachedAt: cachedAt, refreshing: refreshing)
             }
             .task { await load() }
-            .refreshable { await load() }
+            .refreshable { await load(force: true) }
             .navigationDestination(for: RecapPeriod.self) { RecapDetailView(period: $0) }
             .onReceive(NotificationCenter.default.publisher(for: NetworkRestored.notification)) { _ in
+                Task { await load() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: LocalLog.changed)) { _ in
                 Task { await load() }
             }
         }
@@ -76,16 +79,19 @@ struct RecapView: View {
     }
 
     @MainActor
-    private func load() async {
-        if recap == nil, let hit = LastReadStore.shared.load(Recap.self, key: .recap) {
-            recap = hit.payload
-            cachedAt = hit.savedAt
-            fromCache = false
-            refreshing = true
+    private func load(force: Bool = false) async {
+        if let local = await APIClient.shared.localRecap() {
+            recap = local.value
+            cachedAt = local.cachedAt
             error = nil
-        } else {
-            refreshing = recap != nil
         }
+        guard force || NetworkRestored.isOnline else {
+            error = recap == nil ? "No internet connection." : nil
+            fromCache = recap != nil
+            refreshing = false
+            return
+        }
+        refreshing = recap != nil
         do {
             let read = try await APIClient.shared.recap()
             recap = read.value
